@@ -1363,6 +1363,8 @@ AC_CHECK_DECL(CLOCK_MONOTONIC,
 	 AC_DEFINE(HAVE_CLOCK_MONOTONIC,, Have monotonic clock)
 ], [AC_MSG_RESULT(no)], [QUAGGA_INCLUDES])
 
+
+
 dnl -------------------
 dnl capabilities checks
 dnl -------------------
@@ -1552,6 +1554,11 @@ dnl allow deprecated interfaces to
 dnl be exposed.
 dnl -------------------------------
 AC_DEFINE(QUAGGA_NO_DEPRECATED_INTERFACES, 1, Hide deprecated interfaces)
+
+dnl +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+dnl add librtr to libs for bgp rpki
+dnl +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+LIBS="$LIBS -lrtr"
 
 dnl ---------------------------
 dnl Check htonl works correctly
