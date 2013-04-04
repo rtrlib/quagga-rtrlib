@@ -438,13 +438,11 @@ main (int argc, char **argv)
   vty_init (master);
   memory_init ();
 
+  /* BGP related initialization.  */
+  bgp_init ();
   #ifdef include_rpki
   rpki_init();
   #endif
-
-  /* BGP related initialization.  */
-  bgp_init ();
-
   /* Sort CLI commands. */
   sort_node ();
 
