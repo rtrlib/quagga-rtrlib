@@ -5619,8 +5619,14 @@ static int bgp_show_table(struct vty *vty, struct bgp_table *table,
           vty_out(vty, "BGP table version is 0, local router ID is %s%s",
               inet_ntoa(*router_id), VTY_NEWLINE);
           vty_out(vty, BGP_SHOW_SCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
+
+#ifdef include_rpki
+          vty_out(vty, BGP_SHOW_OCODE_HEADER, "", VTY_NEWLINE);
           vty_out(vty, BGP_SHOW_RPKI_HEADER, VTY_NEWLINE);
+          vty_out(vty, "%s", VTY_NEWLINE);
+#else
           vty_out(vty, BGP_SHOW_OCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
+#endif
 
           if (type == bgp_show_type_dampend_paths
               || type == bgp_show_type_damp_neighbor)
@@ -5637,6 +5643,9 @@ static int bgp_show_table(struct vty *vty, struct bgp_table *table,
               || type == bgp_show_type_flap_neighbor)
             vty_out(vty, BGP_SHOW_FLAP_HEADER, VTY_NEWLINE);
           else
+#ifdef include_rpki
+            vty_out(vty, " ");
+#endif
             vty_out(vty, BGP_SHOW_HEADER, VTY_NEWLINE);
           header = 0;
         }
