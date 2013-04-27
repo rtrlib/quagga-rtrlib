@@ -1943,13 +1943,15 @@ static int bgp_update_main(struct peer *peer, struct prefix *p,
   }
 
 #ifdef include_rpki
-  /* Apply rpki origin validation.  */
-  rpki_validation_status = rpki_validate_prefix(peer, attr, p);
-  if (rpki_validation_status == RPKI_INVALID)
-    {
-      reason = "origin of address prefix not validated by rpki;";
-      goto filtered;
-    }
+  /* Apply rpki origin validation.
+     Default behavior is to filter invalid prefixes. */
+  if(enable_prefix_validation){
+    rpki_validation_status = rpki_validate_prefix(peer, attr, p);
+    if (rpki_validation_status == RPKI_INVALID && !allow_invalid){
+        reason = "origin of address prefix not validated by rpki;";
+        goto filtered;
+      }
+  }
 #endif
 
   new_attr.extra = &new_extra;
@@ -4947,22 +4949,24 @@ static void route_vty_short_status_out(struct vty *vty, struct bgp_info *binfo) 
 
 #ifdef include_rpki
   /* RPKI Origin Validation code */
-  switch (binfo->rpki_validation_status) {
-    case RPKI_VALID:
-      vty_out(vty, "V");
-      break;
+  if(enable_prefix_validation){
+    switch (binfo->rpki_validation_status) {
+      case RPKI_VALID:
+        vty_out(vty, "V");
+        break;
 
-    case RPKI_INVALID:
-      vty_out(vty, "I");
-      break;
+      case RPKI_INVALID:
+        vty_out(vty, "I");
+        break;
 
-    case RPKI_NOTFOUND:
-      vty_out(vty, "N");
-      break;
+      case RPKI_NOTFOUND:
+        vty_out(vty, "N");
+        break;
 
-    default:
-      vty_out(vty, " ");
-      break;
+      default:
+        vty_out(vty, " ");
+        break;
+    }
   }
 #endif
 
