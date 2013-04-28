@@ -5644,7 +5644,9 @@ static int bgp_show_table(struct vty *vty, struct bgp_table *table,
             vty_out(vty, BGP_SHOW_FLAP_HEADER, VTY_NEWLINE);
           else
 #ifdef include_rpki
-            vty_out(vty, " ");
+            if(enable_prefix_validation){
+              vty_out(vty, " ");
+            }
 #endif
             vty_out(vty, BGP_SHOW_HEADER, VTY_NEWLINE);
           header = 0;
