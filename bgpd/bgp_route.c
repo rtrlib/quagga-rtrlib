@@ -4949,7 +4949,7 @@ static void route_vty_short_status_out(struct vty *vty, struct bgp_info *binfo) 
 
 #ifdef include_rpki
   /* RPKI Origin Validation code */
-  if(enable_prefix_validation){
+  if(enable_prefix_validation && rpki_is_synchronized()){
     switch (binfo->rpki_validation_status) {
       case RPKI_VALID:
         vty_out(vty, "V");
@@ -5644,7 +5644,7 @@ static int bgp_show_table(struct vty *vty, struct bgp_table *table,
             vty_out(vty, BGP_SHOW_FLAP_HEADER, VTY_NEWLINE);
           else
 #ifdef include_rpki
-            if(enable_prefix_validation){
+            if(enable_prefix_validation  && rpki_is_synchronized()){
               vty_out(vty, " ");
             }
 #endif
