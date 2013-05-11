@@ -120,6 +120,8 @@ struct bgp
 #define BGP_FLAG_LOG_NEIGHBOR_CHANGES     (1 << 11)
 #define BGP_FLAG_GRACEFUL_RESTART         (1 << 12)
 #define BGP_FLAG_ASPATH_CONFED            (1 << 13)
+#define BGP_FLAG_VALIDATE_DISABLE         (1 << 14)
+#define BGP_FLAG_ALLOW_INVALID            (1 << 15)
 
   /* BGP Per AF flags */
   u_int16_t af_flags[AFI_MAX][SAFI_MAX];
