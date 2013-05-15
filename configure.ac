@@ -301,6 +301,9 @@ AC_ARG_ENABLE(fpm,
   AS_HELP_STRING([--enable-fpm], [enable Forwarding Plane Manager support]))
 AC_ARG_ENABLE(werror,
   AS_HELP_STRING([--enable-werror], [enable -Werror (recommended for developers only)]))
+AC_ARG_ENABLE(rpki,
+  AS_HELP_STRING([--enable-rpki],  [enable RPKI prefix validation support]))
+
 
 if test x"${enable_gcc_rdynamic}" != x"no" ; then
   if test x"${enable_gcc_rdynamic}" = x"yes" -o x"$COMPILER" = x"GCC"; then
@@ -1555,11 +1558,14 @@ dnl be exposed.
 dnl -------------------------------
 AC_DEFINE(QUAGGA_NO_DEPRECATED_INTERFACES, 1, Hide deprecated interfaces)
 
-dnl +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-dnl add librtr to libs for bgp rpki
-dnl +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-LIBS="$LIBS -lrtr"
+dnl ------------------------------------
+dnl Enable RPKI and add librtr to libs
+dnl ------------------------------------
 
+if test "${enable_rpki}" = "yes"; then
+  AC_DEFINE(HAVE_RPKI,,Enable RPKI prefix validation for BGP)
+  LIBS="$LIBS -lrtr"
+fi
 dnl ---------------------------
 dnl Check htonl works correctly
 dnl ---------------------------
