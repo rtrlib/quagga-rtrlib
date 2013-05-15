@@ -56,8 +56,8 @@
 #include "bgpd/bgp_vty.h"
 #include "bgpd/bgp_mpath.h"
 
-#define include_rpki
-#ifdef include_rpki
+
+#ifdef HAVE_RPKI
 #include "bgpd/rpki/bgp_rpki.h"
 
 #define DO_RPKI_ORIGIN_VALIDATION(bgp, bgp_info, prefix) \
@@ -325,6 +325,26 @@ static int bgp_info_cmp(struct bgp *bgp, struct bgp_info *new,
     return 0;
   if (exist == NULL )
     return 1;
+
+#ifdef HAVE_RPKI
+  /* Prefer valid to not found and not found to invalid.
+   * But if a "match rpki" command is used in a route-map
+   * we skip the check and leave the decision to the user.
+   * The user may e.g. set a local preference.
+   */
+  if(!CHECK_FLAG(bgp->flags, BGP_FLAG_VALIDATE_DISABLE)
+      && rpki_is_running() && !rpki_route_map_active()){
+    if(exist->rpki_validation_status != new->rpki_validation_status){
+      if(exist->rpki_validation_status == RPKI_VALID
+          || new->rpki_validation_status == RPKI_INVALID){
+        return 0;
+      }
+      else {
+        return 1;
+      }
+    }
+  }
+#endif
 
   newattr = new->attr;
   existattr = exist->attr;
@@ -1290,7 +1310,7 @@ static void bgp_best_selection(struct bgp *bgp, struct bgp_node *rn,
       if (do_mpath && bgp_flag_check (bgp, BGP_FLAG_DETERMINISTIC_MED))
       bgp_mp_dmed_deselect (new_select);
 
-#ifdef include_rpki
+#ifdef HAVE_RPKI
       if(ri->rpki_validation_status != RPKI_INVALID
           || CHECK_FLAG(bgp->flags, BGP_FLAG_ALLOW_INVALID)){
         new_select = ri;
@@ -1392,7 +1412,7 @@ static wq_item_status bgp_process_rsclient(struct work_queue *wq, void *data) {
   struct listnode *node, *nnode;
   struct peer *rsclient = bgp_node_table(rn)->owner;
 
-#ifdef include_rpki
+#ifdef HAVE_RPKI
   if (rn->info != NULL ) {
     struct bgp_info * bgp_info = rn->info;
     // If we have validation data and prefix has not yet been validated
@@ -1461,7 +1481,7 @@ static wq_item_status bgp_process_main(struct work_queue *wq, void *data) {
   struct listnode *node, *nnode;
   struct peer *peer;
 
-#ifdef include_rpki
+#ifdef HAVE_RPKI
   if (rn->info != NULL ) {
     struct bgp_info * bgp_info = rn->info;
     // If we have validation data and prefix has not yet been validated
@@ -4979,7 +4999,7 @@ enum bgp_display_type {
 /* Print the short form route status for a bgp_info */
 static void route_vty_short_status_out(struct vty *vty, struct bgp_info *binfo) {
 
-#ifdef include_rpki
+#ifdef HAVE_RPKI
   /* RPKI Origin Validation code */
   switch (binfo->rpki_validation_status) {
     case RPKI_VALID:
@@ -5651,7 +5671,7 @@ static int bgp_show_table(struct vty *vty, struct bgp_table *table,
               inet_ntoa(*router_id), VTY_NEWLINE);
           vty_out(vty, BGP_SHOW_SCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
 
-#ifdef include_rpki
+#ifdef HAVE_RPKI
           vty_out(vty, BGP_SHOW_OCODE_HEADER, "", VTY_NEWLINE);
           vty_out(vty, BGP_SHOW_RPKI_HEADER, VTY_NEWLINE);
           vty_out(vty, "%s", VTY_NEWLINE);
@@ -5674,7 +5694,7 @@ static int bgp_show_table(struct vty *vty, struct bgp_table *table,
               || type == bgp_show_type_flap_neighbor)
             vty_out(vty, BGP_SHOW_FLAP_HEADER, VTY_NEWLINE);
           else
-#ifdef include_rpki
+#ifdef HAVE_RPKI
             vty_out(vty, " ");
 #endif
           vty_out(vty, BGP_SHOW_HEADER, VTY_NEWLINE);
