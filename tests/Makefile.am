@@ -1,12 +1,33 @@
+AUTOMAKE_OPTIONS    = dejagnu
+export DEJAGNU
+DEJATOOL = libzebra
+
+SUBDIRS = \
+	bgpd.tests \
+	libzebra.tests
+
+EXTRA_DIST = \
+	config/unix.exp \
+	lib/bgpd.exp \
+	lib/libzebra.exp \
+	global-conf.exp
+
 INCLUDES = @INCLUDES@ -I.. -I$(top_srcdir) -I$(top_srcdir)/lib -I$(top_builddir)/lib
 DEFS = @DEFS@ $(LOCAL_OPTS) -DSYSCONFDIR=\"$(sysconfdir)/\"
 
 AM_CFLAGS = $(PICFLAGS)
 AM_LDFLAGS = $(PILDFLAGS)
 
+if BGPD
+TESTS_BGPD = aspathtest testbgpcap ecommtest testbgpmpattr testbgpmpath
+DEJATOOL += bgpd
+else
+TESTS_BGPD =
+endif
+
 noinst_PROGRAMS = testsig testbuffer testmemory heavy heavywq heavythread \
-		aspathtest testprivs teststream testbgpcap ecommtest \
-		testbgpmpattr testchecksum testbgpmpath tabletest
+		testprivs teststream testchecksum tabletest \
+		$(TESTS_BGPD)
 
 testsig_SOURCES = test-sig.c
 testbuffer_SOURCES = test-buffer.c

@@ -1660,8 +1660,10 @@ ospf_ls_upd_list_lsa (struct ospf_neighbor *nbr, struct stream *s,
         case OSPF_AS_EXTERNAL_LSA:
 #ifdef HAVE_OPAQUE_LSA
         case OSPF_OPAQUE_AS_LSA:
+#endif /* HAVE_OPAQUE_LSA */
           lsa->area = NULL;
           break;
+#ifdef HAVE_OPAQUE_LSA
         case OSPF_OPAQUE_LINK_LSA:
           lsa->oi = oi; /* Remember incoming interface for flooding control. */
           /* Fallthrough */
@@ -1831,8 +1833,7 @@ ospf_ls_upd (struct ip *iph, struct ospf_header *ospfh,
 	 then take the following actions: */
 
       if (IS_LSA_MAXAGE (lsa) && !current &&
-	  (ospf_nbr_count (oi, NSM_Exchange) +
-	   ospf_nbr_count (oi, NSM_Loading)) == 0)
+	  ospf_check_nbr_status(oi->ospf))
 	{
 	  /* (4a) Response Link State Acknowledgment. */
 	  ospf_ls_ack_send (nbr, lsa);
