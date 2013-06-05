@@ -1,22 +1,22 @@
 /* BGP routing information
- Copyright (C) 1996, 97, 98, 99 Kunihiro Ishiguro
+   Copyright (C) 1996, 97, 98, 99 Kunihiro Ishiguro
 
- This file is part of GNU Zebra.
+This file is part of GNU Zebra.
 
- GNU Zebra is free software; you can redistribute it and/or modify it
- under the terms of the GNU General Public License as published by the
- Free Software Foundation; either version 2, or (at your option) any
- later version.
+GNU Zebra is free software; you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the
+Free Software Foundation; either version 2, or (at your option) any
+later version.
 
- GNU Zebra is distributed in the hope that it will be useful, but
- WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- General Public License for more details.
+GNU Zebra is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+General Public License for more details.
 
- You should have received a copy of the GNU General Public License
- along with GNU Zebra; see the file COPYING.  If not, write to the Free
- Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
- 02111-1307, USA.  */
+You should have received a copy of the GNU General Public License
+along with GNU Zebra; see the file COPYING.  If not, write to the Free
+Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+02111-1307, USA.  */
 
 #include <zebra.h>
 
@@ -70,61 +70,68 @@
 /* Extern from bgp_dump.c */
 extern const char *bgp_origin_str[];
 extern const char *bgp_origin_long_str[];
-
+
 static struct bgp_node *
-bgp_afi_node_get(struct bgp_table *table, afi_t afi, safi_t safi,
-    struct prefix *p, struct prefix_rd *prd) {
+bgp_afi_node_get (struct bgp_table *table, afi_t afi, safi_t safi, struct prefix *p,
+		  struct prefix_rd *prd)
+{
   struct bgp_node *rn;
   struct bgp_node *prn = NULL;
-
-  assert(table);
+  
+  assert (table);
   if (!table)
-    return NULL ;
+    return NULL;
+  
+  if (safi == SAFI_MPLS_VPN)
+    {
+      prn = bgp_node_get (table, (struct prefix *) prd);
 
-  if (safi == SAFI_MPLS_VPN) {
-    prn = bgp_node_get(table, (struct prefix *) prd);
+      if (prn->info == NULL)
+	prn->info = bgp_table_init (afi, safi);
+      else
+	bgp_unlock_node (prn);
+      table = prn->info;
+    }
 
-    if (prn->info == NULL )
-      prn->info = bgp_table_init(afi, safi);
-    else
-      bgp_unlock_node(prn);
-    table = prn->info;
-  }
-
-  rn = bgp_node_get(table, p);
+  rn = bgp_node_get (table, p);
 
   if (safi == SAFI_MPLS_VPN)
     rn->prn = prn;
 
   return rn;
 }
-
+
 /* Allocate bgp_info_extra */
 static struct bgp_info_extra *
-bgp_info_extra_new(void) {
+bgp_info_extra_new (void)
+{
   struct bgp_info_extra *new;
-  new = XCALLOC(MTYPE_BGP_ROUTE_EXTRA, sizeof(struct bgp_info_extra));
+  new = XCALLOC (MTYPE_BGP_ROUTE_EXTRA, sizeof (struct bgp_info_extra));
   return new;
 }
 
-static void bgp_info_extra_free(struct bgp_info_extra **extra) {
-  if (extra && *extra) {
-    if ((*extra)->damp_info)
-      bgp_damp_info_free((*extra)->damp_info, 0);
-
-    (*extra)->damp_info = NULL;
-
-    XFREE(MTYPE_BGP_ROUTE_EXTRA, *extra);
-
-    *extra = NULL;
-  }
+static void
+bgp_info_extra_free (struct bgp_info_extra **extra)
+{
+  if (extra && *extra)
+    {
+      if ((*extra)->damp_info)
+        bgp_damp_info_free ((*extra)->damp_info, 0);
+      
+      (*extra)->damp_info = NULL;
+      
+      XFREE (MTYPE_BGP_ROUTE_EXTRA, *extra);
+      
+      *extra = NULL;
+    }
 }
 
 /* Get bgp_info extra information for the given bgp_info, lazy allocated
  * if required.
  */
 struct bgp_info_extra *
-bgp_info_extra_get(struct bgp_info *ri) {
+bgp_info_extra_get (struct bgp_info *ri)
+{
   if (!ri->extra)
     ri->extra = bgp_info_extra_new();
   return ri->extra;
@@ -132,173 +139,204 @@ bgp_info_extra_get(struct bgp_info *ri) {
 
 /* Allocate new bgp info structure. */
 static struct bgp_info *
-bgp_info_new(void) {
-  return XCALLOC(MTYPE_BGP_ROUTE, sizeof(struct bgp_info));
+bgp_info_new (void)
+{
+  return XCALLOC (MTYPE_BGP_ROUTE, sizeof (struct bgp_info));
 }
 
 /* Free bgp route information. */
-static void bgp_info_free(struct bgp_info *binfo) {
+static void
+bgp_info_free (struct bgp_info *binfo)
+{
   if (binfo->attr)
-    bgp_attr_unintern(&binfo->attr);
+    bgp_attr_unintern (&binfo->attr);
+  
+  bgp_info_extra_free (&binfo->extra);
+  bgp_info_mpath_free (&binfo->mpath);
 
-  bgp_info_extra_free(&binfo->extra);
-  bgp_info_mpath_free(&binfo->mpath);
+  peer_unlock (binfo->peer); /* bgp_info peer reference */
 
-  peer_unlock(binfo->peer); /* bgp_info peer reference */
-
-  XFREE(MTYPE_BGP_ROUTE, binfo);
+  XFREE (MTYPE_BGP_ROUTE, binfo);
 }
 
 struct bgp_info *
-bgp_info_lock(struct bgp_info *binfo) {
+bgp_info_lock (struct bgp_info *binfo)
+{
   binfo->lock++;
   return binfo;
 }
 
 struct bgp_info *
-bgp_info_unlock(struct bgp_info *binfo) {
-  assert(binfo && binfo->lock > 0);
+bgp_info_unlock (struct bgp_info *binfo)
+{
+  assert (binfo && binfo->lock > 0);
   binfo->lock--;
-
-  if (binfo->lock == 0) {
+  
+  if (binfo->lock == 0)
+    {
 #if 0
-    zlog_debug ("%s: unlocked and freeing", __func__);
-    zlog_backtrace (LOG_DEBUG);
+      zlog_debug ("%s: unlocked and freeing", __func__);
+      zlog_backtrace (LOG_DEBUG);
 #endif
-    bgp_info_free(binfo);
-    return NULL ;
-  }
+      bgp_info_free (binfo);
+      return NULL;
+    }
 
 #if 0
   if (binfo->lock == 1)
-  {
-    zlog_debug ("%s: unlocked to 1", __func__);
-    zlog_backtrace (LOG_DEBUG);
-  }
+    {
+      zlog_debug ("%s: unlocked to 1", __func__);
+      zlog_backtrace (LOG_DEBUG);
+    }
 #endif
-
+  
   return binfo;
 }
 
-void bgp_info_add(struct bgp_node *rn, struct bgp_info *ri) {
+void
+bgp_info_add (struct bgp_node *rn, struct bgp_info *ri)
+{
   struct bgp_info *top;
 
   top = rn->info;
-
+  
   ri->next = rn->info;
   ri->prev = NULL;
   if (top)
     top->prev = ri;
   rn->info = ri;
-
-  bgp_info_lock(ri);
-  bgp_lock_node(rn);
-  peer_lock(ri->peer); /* bgp_info peer reference */
+  
+  bgp_info_lock (ri);
+  bgp_lock_node (rn);
+  peer_lock (ri->peer); /* bgp_info peer reference */
 }
 
-/* Do the actual removal of info from RIB, for use by bgp_process
- completion callback *only* */
-static void bgp_info_reap(struct bgp_node *rn, struct bgp_info *ri) {
+/* Do the actual removal of info from RIB, for use by bgp_process 
+   completion callback *only* */
+static void
+bgp_info_reap (struct bgp_node *rn, struct bgp_info *ri)
+{
   if (ri->next)
     ri->next->prev = ri->prev;
   if (ri->prev)
     ri->prev->next = ri->next;
   else
     rn->info = ri->next;
-
-  bgp_info_mpath_dequeue(ri);
-  bgp_info_unlock(ri);
-  bgp_unlock_node(rn);
+  
+  bgp_info_mpath_dequeue (ri);
+  bgp_info_unlock (ri);
+  bgp_unlock_node (rn);
 }
 
-void bgp_info_delete(struct bgp_node *rn, struct bgp_info *ri) {
-  bgp_info_set_flag(rn, ri, BGP_INFO_REMOVED);
+void
+bgp_info_delete (struct bgp_node *rn, struct bgp_info *ri)
+{
+  bgp_info_set_flag (rn, ri, BGP_INFO_REMOVED);
   /* set of previous already took care of pcount */
-  UNSET_FLAG(ri->flags, BGP_INFO_VALID);
+  UNSET_FLAG (ri->flags, BGP_INFO_VALID);
 }
 
 /* undo the effects of a previous call to bgp_info_delete; typically
- called when a route is deleted and then quickly re-added before the
- deletion has been processed */
-static void bgp_info_restore(struct bgp_node *rn, struct bgp_info *ri) {
-  bgp_info_unset_flag(rn, ri, BGP_INFO_REMOVED);
+   called when a route is deleted and then quickly re-added before the
+   deletion has been processed */
+static void
+bgp_info_restore (struct bgp_node *rn, struct bgp_info *ri)
+{
+  bgp_info_unset_flag (rn, ri, BGP_INFO_REMOVED);
   /* unset of previous already took care of pcount */
-  SET_FLAG(ri->flags, BGP_INFO_VALID);
+  SET_FLAG (ri->flags, BGP_INFO_VALID);
 }
 
-/* Adjust pcount as required */
-static void bgp_pcount_adjust(struct bgp_node *rn, struct bgp_info *ri) {
+/* Adjust pcount as required */   
+static void
+bgp_pcount_adjust (struct bgp_node *rn, struct bgp_info *ri)
+{
   struct bgp_table *table;
 
-  assert(rn && bgp_node_table(rn));
-  assert(ri && ri->peer && ri->peer->bgp);
+  assert (rn && bgp_node_table (rn));
+  assert (ri && ri->peer && ri->peer->bgp);
 
-  table = bgp_node_table(rn);
+  table = bgp_node_table (rn);
 
   /* Ignore 'pcount' for RS-client tables */
-  if (table->type != BGP_TABLE_MAIN || ri->peer == ri->peer->bgp->peer_self)
+  if (table->type != BGP_TABLE_MAIN
+      || ri->peer == ri->peer->bgp->peer_self)
     return;
-
-  if (BGP_INFO_HOLDDOWN (ri) && CHECK_FLAG (ri->flags, BGP_INFO_COUNTED)) {
-
-    UNSET_FLAG(ri->flags, BGP_INFO_COUNTED);
-
-    /* slight hack, but more robust against errors. */
-    if (ri->peer->pcount[table->afi][table->safi])
-      ri->peer->pcount[table->afi][table->safi]--;
-    else {
-      zlog_warn("%s: Asked to decrement 0 prefix count for peer %s", __func__,
-          ri->peer->host);
-      zlog_backtrace(LOG_WARNING);
-      zlog_warn("%s: Please report to Quagga bugzilla", __func__);
+    
+  if (BGP_INFO_HOLDDOWN (ri)
+      && CHECK_FLAG (ri->flags, BGP_INFO_COUNTED))
+    {
+          
+      UNSET_FLAG (ri->flags, BGP_INFO_COUNTED);
+      
+      /* slight hack, but more robust against errors. */
+      if (ri->peer->pcount[table->afi][table->safi])
+        ri->peer->pcount[table->afi][table->safi]--;
+      else
+        {
+          zlog_warn ("%s: Asked to decrement 0 prefix count for peer %s",
+                     __func__, ri->peer->host);
+          zlog_backtrace (LOG_WARNING);
+          zlog_warn ("%s: Please report to Quagga bugzilla", __func__);
+        }      
     }
-  }
-  else if (!BGP_INFO_HOLDDOWN (ri) && !CHECK_FLAG (ri->flags, BGP_INFO_COUNTED)) {
-    SET_FLAG(ri->flags, BGP_INFO_COUNTED);
-    ri->peer->pcount[table->afi][table->safi]++;
-  }
+  else if (!BGP_INFO_HOLDDOWN (ri) 
+           && !CHECK_FLAG (ri->flags, BGP_INFO_COUNTED))
+    {
+      SET_FLAG (ri->flags, BGP_INFO_COUNTED);
+      ri->peer->pcount[table->afi][table->safi]++;
+    }
 }
+
 
 /* Set/unset bgp_info flags, adjusting any other state as needed.
  * This is here primarily to keep prefix-count in check.
  */
-void bgp_info_set_flag(struct bgp_node *rn, struct bgp_info *ri, u_int32_t flag) {
-  SET_FLAG(ri->flags, flag);
-
+void
+bgp_info_set_flag (struct bgp_node *rn, struct bgp_info *ri, u_int32_t flag)
+{
+  SET_FLAG (ri->flags, flag);
+  
   /* early bath if we know it's not a flag that changes useability state */
   if (!CHECK_FLAG (flag, BGP_INFO_VALID|BGP_INFO_UNUSEABLE))
     return;
-
-  bgp_pcount_adjust(rn, ri);
+  
+  bgp_pcount_adjust (rn, ri);
 }
 
-void bgp_info_unset_flag(struct bgp_node *rn, struct bgp_info *ri,
-    u_int32_t flag) {
-  UNSET_FLAG(ri->flags, flag);
-
+void
+bgp_info_unset_flag (struct bgp_node *rn, struct bgp_info *ri, u_int32_t flag)
+{
+  UNSET_FLAG (ri->flags, flag);
+  
   /* early bath if we know it's not a flag that changes useability state */
   if (!CHECK_FLAG (flag, BGP_INFO_VALID|BGP_INFO_UNUSEABLE))
     return;
-
-  bgp_pcount_adjust(rn, ri);
+  
+  bgp_pcount_adjust (rn, ri);
 }
 
 /* Get MED value.  If MED value is missing and "bgp bestpath
- missing-as-worst" is specified, treat it as the worst value. */
-static u_int32_t bgp_med_value(struct attr *attr, struct bgp *bgp) {
+   missing-as-worst" is specified, treat it as the worst value. */
+static u_int32_t
+bgp_med_value (struct attr *attr, struct bgp *bgp)
+{
   if (attr->flag & ATTR_FLAG_BIT (BGP_ATTR_MULTI_EXIT_DISC))
     return attr->med;
-  else {
-    if (bgp_flag_check(bgp, BGP_FLAG_MED_MISSING_AS_WORST))
-      return BGP_MED_MAX;
-    else
-      return 0;
-  }
+  else
+    {
+      if (bgp_flag_check (bgp, BGP_FLAG_MED_MISSING_AS_WORST))
+	return BGP_MED_MAX;
+      else
+	return 0;
+    }
 }
 
 /* Compare two bgp route entity.  br is preferable then return 1. */
-static int bgp_info_cmp(struct bgp *bgp, struct bgp_info *new,
-    struct bgp_info *exist, int *paths_eq) {
+static int
+bgp_info_cmp (struct bgp *bgp, struct bgp_info *new, struct bgp_info *exist,
+	      int *paths_eq)
+{
   struct attr *newattr, *existattr;
   struct attr_extra *newattre, *existattre;
   bgp_peer_sort_t new_sort;
@@ -321,9 +359,9 @@ static int bgp_info_cmp(struct bgp *bgp, struct bgp_info *new,
   *paths_eq = 0;
 
   /* 0. Null check. */
-  if (new == NULL )
+  if (new == NULL)
     return 0;
-  if (exist == NULL )
+  if (exist == NULL)
     return 1;
 
 #ifdef HAVE_RPKI
@@ -382,36 +420,39 @@ static int bgp_info_cmp(struct bgp *bgp, struct bgp_info *new,
    *  - BGP_ROUTE_AGGREGATE
    *  - BGP_ROUTE_REDISTRIBUTE
    */
-  if (!(new->sub_type == BGP_ROUTE_NORMAL))
-    return 1;
-  if (!(exist->sub_type == BGP_ROUTE_NORMAL))
-    return 0;
+  if (! (new->sub_type == BGP_ROUTE_NORMAL))
+     return 1;
+  if (! (exist->sub_type == BGP_ROUTE_NORMAL))
+     return 0;
 
   /* 4. AS path length check. */
-  if (!bgp_flag_check(bgp, BGP_FLAG_ASPATH_IGNORE)) {
-    int exist_hops = aspath_count_hops(existattr->aspath);
-    int exist_confeds = aspath_count_confeds(existattr->aspath);
-
-    if (bgp_flag_check(bgp, BGP_FLAG_ASPATH_CONFED)) {
-      int aspath_hops;
-
-      aspath_hops = aspath_count_hops(newattr->aspath);
-      aspath_hops += aspath_count_confeds(newattr->aspath);
-
-      if (aspath_hops < (exist_hops + exist_confeds))
-        return 1;
-      if (aspath_hops > (exist_hops + exist_confeds))
-        return 0;
+  if (! bgp_flag_check (bgp, BGP_FLAG_ASPATH_IGNORE))
+    {
+      int exist_hops = aspath_count_hops (existattr->aspath);
+      int exist_confeds = aspath_count_confeds (existattr->aspath);
+      
+      if (bgp_flag_check (bgp, BGP_FLAG_ASPATH_CONFED))
+	{
+	  int aspath_hops;
+	  
+	  aspath_hops = aspath_count_hops (newattr->aspath);
+          aspath_hops += aspath_count_confeds (newattr->aspath);
+          
+	  if ( aspath_hops < (exist_hops + exist_confeds))
+	    return 1;
+	  if ( aspath_hops > (exist_hops + exist_confeds))
+	    return 0;
+	}
+      else
+	{
+	  int newhops = aspath_count_hops (newattr->aspath);
+	  
+	  if (newhops < exist_hops)
+	    return 1;
+          if (newhops > exist_hops)
+	    return 0;
+	}
     }
-    else {
-      int newhops = aspath_count_hops(newattr->aspath);
-
-      if (newhops < exist_hops)
-        return 1;
-      if (newhops > exist_hops)
-        return 0;
-    }
-  }
 
   /* 5. Origin check. */
   if (newattr->origin < existattr->origin)
@@ -420,26 +461,28 @@ static int bgp_info_cmp(struct bgp *bgp, struct bgp_info *new,
     return 0;
 
   /* 6. MED check. */
-  internal_as_route = (aspath_count_hops(newattr->aspath) == 0
-      && aspath_count_hops(existattr->aspath) == 0);
-  confed_as_route = (aspath_count_confeds(newattr->aspath) > 0
-      && aspath_count_confeds(existattr->aspath) > 0
-      && aspath_count_hops(newattr->aspath) == 0
-      && aspath_count_hops(existattr->aspath) == 0);
+  internal_as_route = (aspath_count_hops (newattr->aspath) == 0
+		      && aspath_count_hops (existattr->aspath) == 0);
+  confed_as_route = (aspath_count_confeds (newattr->aspath) > 0
+		    && aspath_count_confeds (existattr->aspath) > 0
+		    && aspath_count_hops (newattr->aspath) == 0
+		    && aspath_count_hops (existattr->aspath) == 0);
+  
+  if (bgp_flag_check (bgp, BGP_FLAG_ALWAYS_COMPARE_MED)
+      || (bgp_flag_check (bgp, BGP_FLAG_MED_CONFED)
+	 && confed_as_route)
+      || aspath_cmp_left (newattr->aspath, existattr->aspath)
+      || aspath_cmp_left_confed (newattr->aspath, existattr->aspath)
+      || internal_as_route)
+    {
+      new_med = bgp_med_value (new->attr, bgp);
+      exist_med = bgp_med_value (exist->attr, bgp);
 
-  if (bgp_flag_check(bgp, BGP_FLAG_ALWAYS_COMPARE_MED)
-      || (bgp_flag_check(bgp, BGP_FLAG_MED_CONFED) && confed_as_route)
-      || aspath_cmp_left(newattr->aspath, existattr->aspath)
-      || aspath_cmp_left_confed(newattr->aspath, existattr->aspath)
-      || internal_as_route) {
-    new_med = bgp_med_value(new->attr, bgp);
-    exist_med = bgp_med_value(exist->attr, bgp);
-
-    if (new_med < exist_med)
-      return 1;
-    if (new_med > exist_med)
-      return 0;
-  }
+      if (new_med < exist_med)
+	return 1;
+      if (new_med > exist_med)
+	return 0;
+    }
 
   /* 7. Peer type check. */
   new_sort = new->peer->sort;
@@ -466,33 +509,38 @@ static int bgp_info_cmp(struct bgp *bgp, struct bgp_info *new,
     ret = 0;
 
   /* 9. Maximum path check. */
-  if (newm == existm) {
-    if (new->peer->sort == BGP_PEER_IBGP) {
-      if (aspath_cmp(new->attr->aspath, exist->attr->aspath))
-        *paths_eq = 1;
+  if (newm == existm)
+    {
+      if (new->peer->sort == BGP_PEER_IBGP)
+	{
+	  if (aspath_cmp (new->attr->aspath, exist->attr->aspath))
+	    *paths_eq = 1;
+	}
+      else if (new->peer->as == exist->peer->as)
+	*paths_eq = 1;
     }
-    else if (new->peer->as == exist->peer->as)
-      *paths_eq = 1;
-  }
-  else {
-    /*
-     * TODO: If unequal cost ibgp multipath is enabled we can
-     * mark the paths as equal here instead of returning
-     */
-    return ret;
-  }
+  else
+    {
+      /*
+       * TODO: If unequal cost ibgp multipath is enabled we can
+       * mark the paths as equal here instead of returning
+       */
+      return ret;
+    }
 
   /* 10. If both paths are external, prefer the path that was received
-   first (the oldest one).  This step minimizes route-flap, since a
-   newer path won't displace an older one, even if it was the
-   preferred route based on the additional decision criteria below.  */
-  if (!bgp_flag_check(bgp, BGP_FLAG_COMPARE_ROUTER_ID)
-      && new_sort == BGP_PEER_EBGP && exist_sort == BGP_PEER_EBGP) {
-    if (CHECK_FLAG (new->flags, BGP_INFO_SELECTED))
-      return 1;
-    if (CHECK_FLAG (exist->flags, BGP_INFO_SELECTED))
-      return 0;
-  }
+     first (the oldest one).  This step minimizes route-flap, since a
+     newer path won't displace an older one, even if it was the
+     preferred route based on the additional decision criteria below.  */
+  if (! bgp_flag_check (bgp, BGP_FLAG_COMPARE_ROUTER_ID)
+      && new_sort == BGP_PEER_EBGP
+      && exist_sort == BGP_PEER_EBGP)
+    {
+      if (CHECK_FLAG (new->flags, BGP_INFO_SELECTED))
+	return 1;
+      if (CHECK_FLAG (exist->flags, BGP_INFO_SELECTED))
+	return 0;
+    }
 
   /* 11. Rourter-ID comparision. */
   if (newattr->flag & ATTR_FLAG_BIT(BGP_ATTR_ORIGINATOR_ID))
@@ -504,9 +552,9 @@ static int bgp_info_cmp(struct bgp *bgp, struct bgp_info *new,
   else
     exist_id.s_addr = exist->peer->remote_id.s_addr;
 
-  if (ntohl(new_id.s_addr) < ntohl(exist_id.s_addr))
+  if (ntohl (new_id.s_addr) < ntohl (exist_id.s_addr))
     return 1;
-  if (ntohl(new_id.s_addr) > ntohl(exist_id.s_addr))
+  if (ntohl (new_id.s_addr) > ntohl (exist_id.s_addr))
     return 0;
 
   /* 12. Cluster length comparision. */
@@ -523,7 +571,7 @@ static int bgp_info_cmp(struct bgp *bgp, struct bgp_info *new,
     return 0;
 
   /* 13. Neighbor address comparision. */
-  ret = sockunion_cmp(new->peer->su_remote, exist->peer->su_remote);
+  ret = sockunion_cmp (new->peer->su_remote, exist->peer->su_remote);
 
   if (ret == 1)
     return 0;
@@ -533,8 +581,10 @@ static int bgp_info_cmp(struct bgp *bgp, struct bgp_info *new,
   return 1;
 }
 
-static enum filter_type bgp_input_filter(struct peer *peer, struct prefix *p,
-    struct attr *attr, afi_t afi, safi_t safi) {
+static enum filter_type
+bgp_input_filter (struct peer *peer, struct prefix *p, struct attr *attr,
+		  afi_t afi, safi_t safi)
+{
   struct bgp_filter *filter;
 
   filter = &peer->filter[afi][safi];
@@ -544,34 +594,36 @@ static enum filter_type bgp_input_filter(struct peer *peer, struct prefix *p,
       && !(F ## _IN (filter))) \
     plog_warn (peer->log, "%s: Could not find configured input %s-list %s!", \
                peer->host, #f, F ## _IN_NAME(filter));
+  
+  if (DISTRIBUTE_IN_NAME (filter)) {
+    FILTER_EXIST_WARN(DISTRIBUTE, distribute, filter);
+      
+    if (access_list_apply (DISTRIBUTE_IN (filter), p) == FILTER_DENY)
+      return FILTER_DENY;
+  }
 
-  if (DISTRIBUTE_IN_NAME (filter)){
-  FILTER_EXIST_WARN(DISTRIBUTE, distribute, filter);
-
-  if (access_list_apply (DISTRIBUTE_IN (filter), p) == FILTER_DENY)
-  return FILTER_DENY;
-}
-
-  if (PREFIX_LIST_IN_NAME (filter)){
-  FILTER_EXIST_WARN(PREFIX_LIST, prefix, filter);
-
-  if (prefix_list_apply (PREFIX_LIST_IN (filter), p) == PREFIX_DENY)
-  return FILTER_DENY;
-}
-
-  if (FILTER_LIST_IN_NAME (filter)){
-  FILTER_EXIST_WARN(FILTER_LIST, as, filter);
-
-  if (as_list_apply (FILTER_LIST_IN (filter), attr->aspath)== AS_FILTER_DENY)
-  return FILTER_DENY;
-}
-
+  if (PREFIX_LIST_IN_NAME (filter)) {
+    FILTER_EXIST_WARN(PREFIX_LIST, prefix, filter);
+    
+    if (prefix_list_apply (PREFIX_LIST_IN (filter), p) == PREFIX_DENY)
+      return FILTER_DENY;
+  }
+  
+  if (FILTER_LIST_IN_NAME (filter)) {
+    FILTER_EXIST_WARN(FILTER_LIST, as, filter);
+    
+    if (as_list_apply (FILTER_LIST_IN (filter), attr->aspath)== AS_FILTER_DENY)
+      return FILTER_DENY;
+  }
+  
   return FILTER_PERMIT;
 #undef FILTER_EXIST_WARN
 }
 
-static enum filter_type bgp_output_filter(struct peer *peer, struct prefix *p,
-    struct attr *attr, afi_t afi, safi_t safi) {
+static enum filter_type
+bgp_output_filter (struct peer *peer, struct prefix *p, struct attr *attr,
+		   afi_t afi, safi_t safi)
+{
   struct bgp_filter *filter;
 
   filter = &peer->filter[afi][safi];
@@ -582,26 +634,26 @@ static enum filter_type bgp_output_filter(struct peer *peer, struct prefix *p,
     plog_warn (peer->log, "%s: Could not find configured output %s-list %s!", \
                peer->host, #f, F ## _OUT_NAME(filter));
 
-  if (DISTRIBUTE_OUT_NAME (filter)){
-  FILTER_EXIST_WARN(DISTRIBUTE, distribute, filter);
+  if (DISTRIBUTE_OUT_NAME (filter)) {
+    FILTER_EXIST_WARN(DISTRIBUTE, distribute, filter);
+    
+    if (access_list_apply (DISTRIBUTE_OUT (filter), p) == FILTER_DENY)
+      return FILTER_DENY;
+  }
 
-  if (access_list_apply (DISTRIBUTE_OUT (filter), p) == FILTER_DENY)
-  return FILTER_DENY;
-}
+  if (PREFIX_LIST_OUT_NAME (filter)) {
+    FILTER_EXIST_WARN(PREFIX_LIST, prefix, filter);
+    
+    if (prefix_list_apply (PREFIX_LIST_OUT (filter), p) == PREFIX_DENY)
+      return FILTER_DENY;
+  }
 
-  if (PREFIX_LIST_OUT_NAME (filter)){
-  FILTER_EXIST_WARN(PREFIX_LIST, prefix, filter);
-
-  if (prefix_list_apply (PREFIX_LIST_OUT (filter), p) == PREFIX_DENY)
-  return FILTER_DENY;
-}
-
-  if (FILTER_LIST_OUT_NAME (filter)){
-  FILTER_EXIST_WARN(FILTER_LIST, as, filter);
-
-  if (as_list_apply (FILTER_LIST_OUT (filter), attr->aspath) == AS_FILTER_DENY)
-  return FILTER_DENY;
-}
+  if (FILTER_LIST_OUT_NAME (filter)) {
+    FILTER_EXIST_WARN(FILTER_LIST, as, filter);
+    
+    if (as_list_apply (FILTER_LIST_OUT (filter), attr->aspath) == AS_FILTER_DENY)
+      return FILTER_DENY;
+  }
 
   return FILTER_PERMIT;
 #undef FILTER_EXIST_WARN
