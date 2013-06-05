@@ -1565,6 +1565,7 @@ dnl ------------------------------------
 if test "${enable_rpki}" = "yes"; then
   AC_DEFINE(HAVE_RPKI,,Enable RPKI prefix validation for BGP)
   LIBS="$LIBS -lrtr"
+  CFLAGS="$CFLAGS -pthread"
 fi
 dnl ---------------------------
 dnl Check htonl works correctly
