@@ -1366,8 +1366,6 @@ AC_CHECK_DECL(CLOCK_MONOTONIC,
 	 AC_DEFINE(HAVE_CLOCK_MONOTONIC,, Have monotonic clock)
 ], [AC_MSG_RESULT(no)], [QUAGGA_INCLUDES])
 
-
-
 dnl -------------------
 dnl capabilities checks
 dnl -------------------
