@@ -440,9 +440,9 @@ main (int argc, char **argv)
   /* BGP related initialization.  */
   bgp_init ();
 
-#ifdef HAVE_RPKI
+  #ifdef HAVE_RPKI
   rpki_init();
-#endif
+  #endif
 
   /* Sort CLI commands. */
   sort_node ();
