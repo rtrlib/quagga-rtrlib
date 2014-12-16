@@ -1,8 +1,22 @@
-/*
- * bgp_rpki.h
+/* BGP RPKI
+ * Copyright (C) 2013 Michael Mester (m.mester@fu-berlin.de)
  *
- *  Created on: 15.02.2013
- *      Author: Michael Mester
+ * This file is part of Quagga
+ *
+ * Quagga is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2, or (at your option) any
+ * later version.
+ *
+ * Quagga is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Quagga; see the file COPYING.  If not, write to the Free
+ * Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
+ * 02111-1307, USA.
  */
 
 #ifndef BGP_RPKI_H_
@@ -44,33 +58,19 @@ unsigned int timeout;
 unsigned int initial_synchronisation_timeout;
 
 /**********************************/
-/** Declaration of structs       **/
-/**********************************/
-typedef struct data_elem_t{
-    uint32_t asn;
-    uint8_t max_len;
-    uintptr_t socket_id;
-} data_elem;
-
-typedef struct node_data_t{
-    unsigned int len;
-    data_elem* ary;
-} node_data;
-
-/**********************************/
 /** Declaration of functions     **/
 /**********************************/
 void rpki_start(void);
 void rpki_reset_session(void);
-void rpki_test(void);
 void rpki_init(void);
 void rpki_finish(void);
 int rpki_is_synchronized(void);
 int rpki_is_running(void);
-void do_rpki_origin_validation(struct bgp* bgp, struct bgp_info* bgp_info, struct prefix* prefix);
+void rpki_set_validation_status(struct bgp* bgp, struct bgp_info* bgp_info, struct prefix* prefix);
 int rpki_validate_prefix(struct peer* peer, struct attr* attr, struct prefix *prefix);
-int rpki_route_map_active();
+int rpki_is_route_map_active(void);
 void rpki_set_route_map_active(int activate);
-void print_prefix_table(struct vty *vty);
-int get_connected_group();
+void rpki_print_prefix_table(struct vty *vty);
+int rpki_get_connected_group(void);
+void rpki_revalidate_all_routes(struct bgp* bgp, afi_t afi);
 #endif /* BGP_RPKI_H_ */
