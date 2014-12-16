@@ -280,9 +280,9 @@ DEFUN (ip_route_mask_flags_distance,
        "IP destination prefix mask\n"
        "IP gateway address\n"
        "IP gateway interface name\n"
-       "Distance value for this route\n"
        "Emit an ICMP unreachable when matched\n"
-       "Silently discard pkts when matched\n")
+       "Silently discard pkts when matched\n"
+       "Distance value for this route\n")
 {
   return zebra_static_ipv4 (vty, 1, argv[0], argv[1], argv[2], argv[3], argv[4]);
 }
@@ -294,9 +294,9 @@ DEFUN (ip_route_mask_flags_distance2,
        "Establish static routes\n"
        "IP destination prefix\n"
        "IP destination prefix mask\n"
-       "Distance value for this route\n"
        "Emit an ICMP unreachable when matched\n"
-       "Silently discard pkts when matched\n")
+       "Silently discard pkts when matched\n"
+       "Distance value for this route\n")
 {
   return zebra_static_ipv4 (vty, 1, argv[0], argv[1], NULL, argv[2], argv[3]);
 }
@@ -533,7 +533,8 @@ static void
 vty_show_ip_route_detail (struct vty *vty, struct route_node *rn)
 {
   struct rib *rib;
-  struct nexthop *nexthop;
+  struct nexthop *nexthop, *tnexthop;
+  int recursing;
 
   RNODE_FOREACH_RIB (rn, rib)
     {
@@ -582,12 +583,13 @@ vty_show_ip_route_detail (struct vty *vty, struct route_node *rn)
 	  vty_out (vty, " ago%s", VTY_NEWLINE);
 	}
 
-      for (nexthop = rib->nexthop; nexthop; nexthop = nexthop->next)
+      for (ALL_NEXTHOPS_RO(rib->nexthop, nexthop, tnexthop, recursing))
 	{
           char addrstr[32];
 
-	  vty_out (vty, "  %c",
-		   CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB) ? '*' : ' ');
+	  vty_out (vty, "  %c%s",
+		   CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB) ? '*' : ' ',
+		   recursing ? "  " : "");
 
 	  switch (nexthop->type)
 	    {
@@ -613,25 +615,12 @@ vty_show_ip_route_detail (struct vty *vty, struct route_node *rn)
 	  if (! CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_ACTIVE))
 	    vty_out (vty, " inactive");
 
+	  if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_ONLINK))
+	    vty_out (vty, " onlink");
+
 	  if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_RECURSIVE))
-	    {
-	      vty_out (vty, " (recursive");
-		
-	      switch (nexthop->rtype)
-		{
-		case NEXTHOP_TYPE_IPV4:
-		case NEXTHOP_TYPE_IPV4_IFINDEX:
-		  vty_out (vty, " via %s)", inet_ntoa (nexthop->rgate.ipv4));
-		  break;
-		case NEXTHOP_TYPE_IFINDEX:
-		case NEXTHOP_TYPE_IFNAME:
-		  vty_out (vty, " is directly connected, %s)",
-			   ifindex2ifname (nexthop->rifindex));
-		  break;
-		default:
-		  break;
-		}
-	    }
+	    vty_out (vty, " (recursive)");
+
 	  switch (nexthop->type)
             {
             case NEXTHOP_TYPE_IPV4:
@@ -668,12 +657,13 @@ vty_show_ip_route_detail (struct vty *vty, struct route_node *rn)
 static void
 vty_show_ip_route (struct vty *vty, struct route_node *rn, struct rib *rib)
 {
-  struct nexthop *nexthop;
+  struct nexthop *nexthop, *tnexthop;
+  int recursing;
   int len = 0;
   char buf[BUFSIZ];
 
   /* Nexthop information. */
-  for (nexthop = rib->nexthop; nexthop; nexthop = nexthop->next)
+  for (ALL_NEXTHOPS_RO(rib->nexthop, nexthop, tnexthop, recursing))
     {
       if (nexthop == rib->nexthop)
 	{
@@ -697,7 +687,7 @@ vty_show_ip_route (struct vty *vty, struct route_node *rn, struct rib *rib)
 	vty_out (vty, "  %c%*c",
 		 CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB)
 		 ? '*' : ' ',
-		 len - 3, ' ');
+		 len - 3 + (2 * recursing), ' ');
 
       switch (nexthop->type)
 	{
@@ -723,25 +713,12 @@ vty_show_ip_route (struct vty *vty, struct route_node *rn, struct rib *rib)
       if (! CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_ACTIVE))
 	vty_out (vty, " inactive");
 
+      if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_ONLINK))
+	vty_out (vty, " onlink");
+
       if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_RECURSIVE))
-	{
-	  vty_out (vty, " (recursive");
-		
-	  switch (nexthop->rtype)
-	    {
-	    case NEXTHOP_TYPE_IPV4:
-	    case NEXTHOP_TYPE_IPV4_IFINDEX:
-	      vty_out (vty, " via %s)", inet_ntoa (nexthop->rgate.ipv4));
-	      break;
-	    case NEXTHOP_TYPE_IFINDEX:
-	    case NEXTHOP_TYPE_IFNAME:
-	      vty_out (vty, " is directly connected, %s)",
-		       ifindex2ifname (nexthop->rifindex));
-	      break;
-	    default:
-	      break;
-	    }
-	}
+	vty_out (vty, " (recursive)");
+
       switch (nexthop->type)
         {
           case NEXTHOP_TYPE_IPV4:
@@ -1021,6 +998,8 @@ DEFUN (show_ip_route_prefix,
   if (! rn || rn->p.prefixlen != p.prefixlen)
     {
       vty_out (vty, "%% Network not in table%s", VTY_NEWLINE);
+      if (rn)
+        route_unlock_node (rn);
       return CMD_WARNING;
     }
 
@@ -1051,7 +1030,8 @@ vty_show_ip_route_summary (struct vty *vty, struct route_table *table)
         {
 	  rib_cnt[ZEBRA_ROUTE_TOTAL]++;
 	  rib_cnt[rib->type]++;
-	  if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB)) 
+	  if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB)
+	      || nexthop_has_fib_child(nexthop))
 	    {
 	      fib_cnt[ZEBRA_ROUTE_TOTAL]++;
 	      fib_cnt[rib->type]++;
@@ -1060,7 +1040,8 @@ vty_show_ip_route_summary (struct vty *vty, struct route_table *table)
 	      CHECK_FLAG (rib->flags, ZEBRA_FLAG_IBGP)) 
 	    {
 	      rib_cnt[ZEBRA_ROUTE_IBGP]++;
-	      if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB)) 
+	      if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB)
+		  || nexthop_has_fib_child(nexthop))
 		fib_cnt[ZEBRA_ROUTE_IBGP]++;
 	    }
 	}
@@ -1093,6 +1074,84 @@ vty_show_ip_route_summary (struct vty *vty, struct route_table *table)
 	   fib_cnt[ZEBRA_ROUTE_TOTAL], VTY_NEWLINE);  
 }
 
+/*
+ * Implementation of the ip route summary prefix command.
+ *
+ * This command prints the primary prefixes that have been installed by various
+ * protocols on the box.
+ *
+ */
+static void
+vty_show_ip_route_summary_prefix (struct vty *vty, struct route_table *table)
+{
+  struct route_node *rn;
+  struct rib *rib;
+  struct nexthop *nexthop;
+#define ZEBRA_ROUTE_IBGP  ZEBRA_ROUTE_MAX
+#define ZEBRA_ROUTE_TOTAL (ZEBRA_ROUTE_IBGP + 1)
+  u_int32_t rib_cnt[ZEBRA_ROUTE_TOTAL + 1];
+  u_int32_t fib_cnt[ZEBRA_ROUTE_TOTAL + 1];
+  u_int32_t i;
+  int       cnt;
+
+  memset (&rib_cnt, 0, sizeof(rib_cnt));
+  memset (&fib_cnt, 0, sizeof(fib_cnt));
+  for (rn = route_top (table); rn; rn = route_next (rn))
+    RNODE_FOREACH_RIB (rn, rib)
+      {
+
+       /*
+        * In case of ECMP, count only once.
+        */
+       cnt = 0;
+       for (nexthop = rib->nexthop; (!cnt && nexthop); nexthop = nexthop->next)
+         {
+          cnt++;
+          rib_cnt[ZEBRA_ROUTE_TOTAL]++;
+          rib_cnt[rib->type]++;
+          if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB))
+	        {
+	         fib_cnt[ZEBRA_ROUTE_TOTAL]++;
+             fib_cnt[rib->type]++;
+            }
+	      if (rib->type == ZEBRA_ROUTE_BGP &&
+	          CHECK_FLAG (rib->flags, ZEBRA_FLAG_IBGP))
+            {
+	         rib_cnt[ZEBRA_ROUTE_IBGP]++;
+		     if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB))
+		        fib_cnt[ZEBRA_ROUTE_IBGP]++;
+            }
+	     }
+      }
+
+  vty_out (vty, "%-20s %-20s %-20s %s",
+	   "Route Source", "Prefix Routes", "FIB", VTY_NEWLINE);
+
+  for (i = 0; i < ZEBRA_ROUTE_MAX; i++)
+    {
+      if (rib_cnt[i] > 0)
+	{
+	  if (i == ZEBRA_ROUTE_BGP)
+	    {
+	      vty_out (vty, "%-20s %-20d %-20d %s", "ebgp",
+		       rib_cnt[ZEBRA_ROUTE_BGP] - rib_cnt[ZEBRA_ROUTE_IBGP],
+		       fib_cnt[ZEBRA_ROUTE_BGP] - fib_cnt[ZEBRA_ROUTE_IBGP],
+		       VTY_NEWLINE);
+	      vty_out (vty, "%-20s %-20d %-20d %s", "ibgp",
+		       rib_cnt[ZEBRA_ROUTE_IBGP], fib_cnt[ZEBRA_ROUTE_IBGP],
+		       VTY_NEWLINE);
+	    }
+	  else
+	    vty_out (vty, "%-20s %-20d %-20d %s", zebra_route_string(i),
+		     rib_cnt[i], fib_cnt[i], VTY_NEWLINE);
+	}
+    }
+
+  vty_out (vty, "------%s", VTY_NEWLINE);
+  vty_out (vty, "%-20s %-20d %-20d %s", "Totals", rib_cnt[ZEBRA_ROUTE_TOTAL],
+	   fib_cnt[ZEBRA_ROUTE_TOTAL], VTY_NEWLINE);
+}
+
 /* Show route summary.  */
 DEFUN (show_ip_route_summary,
        show_ip_route_summary_cmd,
@@ -1109,6 +1168,27 @@ DEFUN (show_ip_route_summary,
     return CMD_SUCCESS;
 
   vty_show_ip_route_summary (vty, table);
+
+  return CMD_SUCCESS;
+}
+
+/* Show route summary prefix.  */
+DEFUN (show_ip_route_summary_prefix,
+       show_ip_route_summary_prefix_cmd,
+       "show ip route summary prefix",
+       SHOW_STR
+       IP_STR
+       "IP routing table\n"
+       "Summary of all routes\n"
+       "Prefix routes\n")
+{
+  struct route_table *table;
+
+  table = vrf_table (AFI_IP, SAFI_UNICAST, 0);
+  if (! table)
+    return CMD_SUCCESS;
+
+  vty_show_ip_route_summary_prefix (vty, table);
 
   return CMD_SUCCESS;
 }
@@ -1231,7 +1311,7 @@ DEFUN (show_ip_mroute,
   return CMD_SUCCESS;
 }
 
-
+
 #ifdef HAVE_IPV6
 /* General fucntion for IPv6 static route. */
 static int
@@ -1543,7 +1623,8 @@ static void
 vty_show_ipv6_route_detail (struct vty *vty, struct route_node *rn)
 {
   struct rib *rib;
-  struct nexthop *nexthop;
+  struct nexthop *nexthop, *tnexthop;
+  int recursing;
   char buf[BUFSIZ];
 
   RNODE_FOREACH_RIB (rn, rib)
@@ -1594,10 +1675,11 @@ vty_show_ipv6_route_detail (struct vty *vty, struct route_node *rn)
 	  vty_out (vty, " ago%s", VTY_NEWLINE);
 	}
 
-      for (nexthop = rib->nexthop; nexthop; nexthop = nexthop->next)
+      for (ALL_NEXTHOPS_RO(rib->nexthop, nexthop, tnexthop, recursing))
 	{
-	  vty_out (vty, "  %c",
-		   CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB) ? '*' : ' ');
+	  vty_out (vty, "  %c%s",
+		   CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB) ? '*' : ' ',
+		   recursing ? "  " : "");
 
 	  switch (nexthop->type)
 	    {
@@ -1625,30 +1707,12 @@ vty_show_ipv6_route_detail (struct vty *vty, struct route_node *rn)
 	  if (! CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_ACTIVE))
 	    vty_out (vty, " inactive");
 
+	  if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_ONLINK))
+	    vty_out (vty, " onlink");
+
 	  if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_RECURSIVE))
-	    {
-	      vty_out (vty, " (recursive");
-		
-	      switch (nexthop->rtype)
-		{
-		case NEXTHOP_TYPE_IPV6:
-		case NEXTHOP_TYPE_IPV6_IFINDEX:
-		case NEXTHOP_TYPE_IPV6_IFNAME:
-		  vty_out (vty, " via %s)",
-			   inet_ntop (AF_INET6, &nexthop->rgate.ipv6,
-				      buf, BUFSIZ));
-		  if (nexthop->rifindex)
-		    vty_out (vty, ", %s", ifindex2ifname (nexthop->rifindex));
-		  break;
-		case NEXTHOP_TYPE_IFINDEX:
-		case NEXTHOP_TYPE_IFNAME:
-		  vty_out (vty, " is directly connected, %s)",
-			   ifindex2ifname (nexthop->rifindex));
-		  break;
-		default:
-		  break;
-		}
-	    }
+	    vty_out (vty, " (recursive)");
+
 	  vty_out (vty, "%s", VTY_NEWLINE);
 	}
       vty_out (vty, "%s", VTY_NEWLINE);
@@ -1659,12 +1723,13 @@ static void
 vty_show_ipv6_route (struct vty *vty, struct route_node *rn,
 		     struct rib *rib)
 {
-  struct nexthop *nexthop;
+  struct nexthop *nexthop, *tnexthop;
+  int recursing;
   int len = 0;
   char buf[BUFSIZ];
 
   /* Nexthop information. */
-  for (nexthop = rib->nexthop; nexthop; nexthop = nexthop->next)
+  for (ALL_NEXTHOPS_RO(rib->nexthop, nexthop, tnexthop, recursing))
     {
       if (nexthop == rib->nexthop)
 	{
@@ -1688,7 +1753,7 @@ vty_show_ipv6_route (struct vty *vty, struct route_node *rn,
 	vty_out (vty, "  %c%*c",
 		 CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB)
 		 ? '*' : ' ',
-		 len - 3, ' ');
+		 len - 3 + (2 * recursing), ' ');
 
       switch (nexthop->type)
 	{
@@ -1717,29 +1782,7 @@ vty_show_ipv6_route (struct vty *vty, struct route_node *rn,
 	vty_out (vty, " inactive");
 
       if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_RECURSIVE))
-	{
-	  vty_out (vty, " (recursive");
-		
-	  switch (nexthop->rtype)
-	    {
-	    case NEXTHOP_TYPE_IPV6:
-	    case NEXTHOP_TYPE_IPV6_IFINDEX:
-	    case NEXTHOP_TYPE_IPV6_IFNAME:
-	      vty_out (vty, " via %s)",
-		       inet_ntop (AF_INET6, &nexthop->rgate.ipv6,
-				  buf, BUFSIZ));
-	      if (nexthop->rifindex)
-		vty_out (vty, ", %s", ifindex2ifname (nexthop->rifindex));
-	      break;
-	    case NEXTHOP_TYPE_IFINDEX:
-	    case NEXTHOP_TYPE_IFNAME:
-	      vty_out (vty, " is directly connected, %s)",
-		       ifindex2ifname (nexthop->rifindex));
-	      break;
-	    default:
-	      break;
-	    }
-	}
+	vty_out (vty, " (recursive)");
 
       if (CHECK_FLAG (rib->flags, ZEBRA_FLAG_BLACKHOLE))
        vty_out (vty, ", bh");
@@ -1955,6 +1998,8 @@ DEFUN (show_ipv6_route_prefix,
   if (! rn || rn->p.prefixlen != p.prefixlen)
     {
       vty_out (vty, "%% Network not in table%s", VTY_NEWLINE);
+      if (rn)
+        route_unlock_node (rn);
       return CMD_WARNING;
     }
 
@@ -1981,6 +2026,27 @@ DEFUN (show_ipv6_route_summary,
     return CMD_SUCCESS;
 
   vty_show_ip_route_summary (vty, table);
+
+  return CMD_SUCCESS;
+}
+
+/* Show ipv6 route summary prefix.  */
+DEFUN (show_ipv6_route_summary_prefix,
+       show_ipv6_route_summary_prefix_cmd,
+       "show ipv6 route summary prefix",
+       SHOW_STR
+       IP_STR
+       "IPv6 routing table\n"
+       "Summary of all IPv6 routes\n"
+       "Prefix routes\n")
+{
+  struct route_table *table;
+
+  table = vrf_table (AFI_IP6, SAFI_UNICAST, 0);
+  if (! table)
+    return CMD_SUCCESS;
+
+  vty_show_ip_route_summary_prefix (vty, table);
 
   return CMD_SUCCESS;
 }
@@ -2154,6 +2220,7 @@ zebra_vty_init (void)
   install_element (VIEW_NODE, &show_ip_route_protocol_cmd);
   install_element (VIEW_NODE, &show_ip_route_supernets_cmd);
   install_element (VIEW_NODE, &show_ip_route_summary_cmd);
+  install_element (VIEW_NODE, &show_ip_route_summary_prefix_cmd);
   install_element (ENABLE_NODE, &show_ip_route_cmd);
   install_element (ENABLE_NODE, &show_ip_route_addr_cmd);
   install_element (ENABLE_NODE, &show_ip_route_prefix_cmd);
@@ -2161,6 +2228,7 @@ zebra_vty_init (void)
   install_element (ENABLE_NODE, &show_ip_route_protocol_cmd);
   install_element (ENABLE_NODE, &show_ip_route_supernets_cmd);
   install_element (ENABLE_NODE, &show_ip_route_summary_cmd);
+  install_element (ENABLE_NODE, &show_ip_route_summary_prefix_cmd);
 
   install_element (VIEW_NODE, &show_ip_mroute_cmd);
   install_element (ENABLE_NODE, &show_ip_mroute_cmd);
@@ -2185,6 +2253,7 @@ zebra_vty_init (void)
   install_element (CONFIG_NODE, &no_ipv6_route_ifname_flags_pref_cmd);
   install_element (VIEW_NODE, &show_ipv6_route_cmd);
   install_element (VIEW_NODE, &show_ipv6_route_summary_cmd);
+  install_element (VIEW_NODE, &show_ipv6_route_summary_prefix_cmd);
   install_element (VIEW_NODE, &show_ipv6_route_protocol_cmd);
   install_element (VIEW_NODE, &show_ipv6_route_addr_cmd);
   install_element (VIEW_NODE, &show_ipv6_route_prefix_cmd);
@@ -2195,6 +2264,7 @@ zebra_vty_init (void)
   install_element (ENABLE_NODE, &show_ipv6_route_prefix_cmd);
   install_element (ENABLE_NODE, &show_ipv6_route_prefix_longer_cmd);
   install_element (ENABLE_NODE, &show_ipv6_route_summary_cmd);
+  install_element (ENABLE_NODE, &show_ipv6_route_summary_prefix_cmd);
 
   install_element (VIEW_NODE, &show_ipv6_mroute_cmd);
   install_element (ENABLE_NODE, &show_ipv6_mroute_cmd);

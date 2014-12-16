@@ -45,7 +45,7 @@ struct bgp_nexthop_cache *zlookup_query (struct in_addr);
 #ifdef HAVE_IPV6
 struct bgp_nexthop_cache *zlookup_query_ipv6 (struct in6_addr *);
 #endif /* HAVE_IPV6 */
-
+
 /* Only one BGP scan thread are activated at the same time. */
 static struct thread *bgp_scan_thread = NULL;
 
@@ -68,7 +68,7 @@ static struct bgp_table *bgp_connected_table[AFI_MAX];
 
 /* BGP nexthop lookup query client. */
 struct zclient *zlookup = NULL;
-
+
 /* Add nexthop to the end of the list.  */
 static void
 bnc_nexthop_add (struct bgp_nexthop_cache *bnc, struct nexthop *nexthop)
@@ -109,7 +109,7 @@ bnc_free (struct bgp_nexthop_cache *bnc)
   bnc_nexthop_free (bnc);
   XFREE (MTYPE_BGP_NEXTHOP_CACHE, bnc);
 }
-
+
 static int
 bgp_nexthop_same (struct nexthop *next1, struct nexthop *next2)
 {
@@ -120,6 +120,11 @@ bgp_nexthop_same (struct nexthop *next1, struct nexthop *next2)
     {
     case ZEBRA_NEXTHOP_IPV4:
       if (! IPV4_ADDR_SAME (&next1->gate.ipv4, &next2->gate.ipv4))
+	return 0;
+      break;
+    case ZEBRA_NEXTHOP_IPV4_IFINDEX:
+      if (! IPV4_ADDR_SAME (&next1->gate.ipv4, &next2->gate.ipv4)
+	  || next1->ifindex != next2->ifindex)
 	return 0;
       break;
     case ZEBRA_NEXTHOP_IFINDEX:
@@ -453,7 +458,8 @@ bgp_scan (afi_t afi, safi_t safi)
 	      changed = 0;
 	      metricchanged = 0;
 
-	      if (bi->peer->sort == BGP_PEER_EBGP && bi->peer->ttl == 1)
+	      if (bi->peer->sort == BGP_PEER_EBGP && bi->peer->ttl == 1
+		  && !CHECK_FLAG(bi->peer->flags, PEER_FLAG_DISABLE_CONNECTED_CHECK))
 		valid = bgp_nexthop_onlink (afi, bi->attr);
 	      else
 		valid = bgp_nexthop_lookup (afi, bi->peer, bi,
@@ -604,6 +610,10 @@ bgp_address_del (struct prefix *p)
   tmp.addr = p->u.prefix4;
 
   addr = hash_lookup (bgp_address_hash, &tmp);
+  /* may have been deleted earlier by bgp_interface_down() */
+  if (addr == NULL)
+    return;
+
   addr->refcnt--;
 
   if (addr->refcnt == 0)
@@ -613,7 +623,7 @@ bgp_address_del (struct prefix *p)
     }
 }
 
-
+
 struct bgp_connected_ref
 {
   unsigned int refcnt;
@@ -771,7 +781,7 @@ bgp_nexthop_self (struct attr *attr)
 
   return 0;
 }
-
+
 static struct bgp_nexthop_cache *
 zlookup_read (void)
 {
@@ -779,9 +789,9 @@ zlookup_read (void)
   uint16_t length;
   u_char marker;
   u_char version;
-  uint16_t command;
-  int nbytes;
-  struct in_addr raddr;
+  uint16_t command __attribute__((unused));
+  int nbytes __attribute__((unused));
+  struct in_addr raddr __attribute__((unused));
   uint32_t metric;
   int i;
   u_char nexthop_num;
@@ -791,6 +801,7 @@ zlookup_read (void)
   s = zlookup->ibuf;
   stream_reset (s);
 
+  /* nbytes not being checked */
   nbytes = stream_read (s, zlookup->sock, 2);
   length = stream_getw (s);
 
@@ -804,9 +815,11 @@ zlookup_read (void)
                __func__, zlookup->sock, marker, version);
       return NULL;
     }
-    
+  
+  /* XXX: not checking command */
   command = stream_getw (s);
   
+  /* XXX: not doing anything with raddr */
   raddr.s_addr = stream_get_ipv4 (s);
   metric = stream_getl (s);
   nexthop_num = stream_getc (s);
@@ -826,6 +839,10 @@ zlookup_read (void)
 	    {
 	    case ZEBRA_NEXTHOP_IPV4:
 	      nexthop->gate.ipv4.s_addr = stream_get_ipv4 (s);
+	      break;
+	    case ZEBRA_NEXTHOP_IPV4_IFINDEX:
+	      nexthop->gate.ipv4.s_addr = stream_get_ipv4 (s);
+	      nexthop->ifindex = stream_getl (s);
 	      break;
 	    case ZEBRA_NEXTHOP_IFINDEX:
 	    case ZEBRA_NEXTHOP_IFNAME:
@@ -887,8 +904,6 @@ zlookup_read_ipv6 (void)
   struct stream *s;
   uint16_t length;
   u_char version, marker;
-  uint16_t  command;
-  int nbytes;
   struct in6_addr raddr;
   uint32_t metric;
   int i;
@@ -899,10 +914,11 @@ zlookup_read_ipv6 (void)
   s = zlookup->ibuf;
   stream_reset (s);
 
-  nbytes = stream_read (s, zlookup->sock, 2);
+  /* XXX: ignoring nbytes, see also zread_lookup */
+  stream_read (s, zlookup->sock, 2);
   length = stream_getw (s);
 
-  nbytes = stream_read (s, zlookup->sock, length - 2);
+  stream_read (s, zlookup->sock, length - 2);
   marker = stream_getc (s);
   version = stream_getc (s);
   
@@ -912,9 +928,11 @@ zlookup_read_ipv6 (void)
                __func__, zlookup->sock, marker, version);
       return NULL;
     }
-    
-  command = stream_getw (s);
   
+  /* XXX: ignoring command */  
+  stream_getw (s);
+  
+  /* XXX: not actually doing anything with raddr */
   stream_get (&raddr, s, 16);
 
   metric = stream_getl (s);
@@ -1000,10 +1018,10 @@ bgp_import_check (struct prefix *p, u_int32_t *igpmetric,
 {
   struct stream *s;
   int ret;
-  u_int16_t length, command;
+  u_int16_t length, command __attribute__((unused));
   u_char version, marker;
-  int nbytes;
-  struct in_addr addr;
+  int nbytes __attribute__((unused));
+  struct in_addr addr __attribute__((unused));
   struct in_addr nexthop;
   u_int32_t metric = 0;
   u_char nexthop_num;
@@ -1049,6 +1067,7 @@ bgp_import_check (struct prefix *p, u_int32_t *igpmetric,
   stream_reset (s);
 
   /* Fetch length. */
+  /* XXX: not using nbytes */
   nbytes = stream_read (s, zlookup->sock, 2);
   length = stream_getw (s);
 
@@ -1063,9 +1082,11 @@ bgp_import_check (struct prefix *p, u_int32_t *igpmetric,
                __func__, zlookup->sock, marker, version);
       return 0;
     }
-    
+  
+  /* XXX: not using command */
   command = stream_getw (s);
   
+  /* XXX: not using addr */
   addr.s_addr = stream_get_ipv4 (s);
   metric = stream_getl (s);
   nexthop_num = stream_getc (s);
@@ -1079,14 +1100,20 @@ bgp_import_check (struct prefix *p, u_int32_t *igpmetric,
     {
       nexthop.s_addr = 0;
       nexthop_type = stream_getc (s);
-      if (nexthop_type == ZEBRA_NEXTHOP_IPV4)
+      switch (nexthop_type)
 	{
+	case ZEBRA_NEXTHOP_IPV4:
 	  nexthop.s_addr = stream_get_ipv4 (s);
-	  if (igpnexthop)
-	    *igpnexthop = nexthop;
+	  break;
+	case ZEBRA_NEXTHOP_IPV4_IFINDEX:
+	  nexthop.s_addr = stream_get_ipv4 (s);
+	  /* ifindex */ (void)stream_getl (s);
+	  break;
+	default:
+	  /* do nothing */
+	  break;
 	}
-      else
-	*igpnexthop = nexthop;
+      *igpnexthop = nexthop;
 
       return 1;
     }
@@ -1223,7 +1250,7 @@ bgp_multiaccess_check_v4 (struct in_addr nexthop, char *peer)
 
   return 0;
 }
-
+
 DEFUN (bgp_scan_time,
        bgp_scan_time_cmd,
        "bgp scan-time <5-60>",
@@ -1298,6 +1325,10 @@ show_ip_bgp_scan_tables (struct vty *vty, const char detail)
 	      {
 	      case NEXTHOP_TYPE_IPV4:
 		vty_out (vty, "  gate %s%s", inet_ntop (AF_INET, &bnc->nexthop[i].gate.ipv4, buf, INET6_ADDRSTRLEN), VTY_NEWLINE);
+		break;
+	      case NEXTHOP_TYPE_IPV4_IFINDEX:
+		vty_out (vty, "  gate %s", inet_ntop (AF_INET, &bnc->nexthop[i].gate.ipv4, buf, INET6_ADDRSTRLEN));
+		vty_out (vty, " ifidx %u%s", bnc->nexthop[i].ifindex, VTY_NEWLINE);
 		break;
 	      case NEXTHOP_TYPE_IFINDEX:
 		vty_out (vty, "  ifidx %u%s", bnc->nexthop[i].ifindex, VTY_NEWLINE);

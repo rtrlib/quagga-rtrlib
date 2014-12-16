@@ -7,7 +7,7 @@
 ##
 AC_PREREQ(2.53)
 
-AC_INIT(Quagga, 0.99.22, [https://bugzilla.quagga.net])
+AC_INIT(Quagga, 0.99.23, [https://bugzilla.quagga.net])
 AC_CONFIG_SRCDIR(lib/zebra.h)
 AC_CONFIG_MACRO_DIR([m4])
 
@@ -202,8 +202,6 @@ AC_ARG_ENABLE(ipv6,
 [  --disable-ipv6          turn off IPv6 related features and daemons])
 AC_ARG_ENABLE(doc,
 [  --disable-doc           do not build docs])
-AC_ARG_ENABLE(tests,
-[  --disable-tests         do not build tests])
 AC_ARG_ENABLE(zebra,
 [  --disable-zebra         do not build zebra daemon])
 AC_ARG_ENABLE(bgpd,
@@ -273,7 +271,9 @@ AC_ARG_ENABLE(gcc_ultra_verbose,
 AC_ARG_ENABLE(linux24_tcp_md5,
 [  --enable-linux24-tcp-md5  enable support for old, Linux-2.4 RFC2385 patch])
 AC_ARG_ENABLE(gcc-rdynamic,
-[  --enable-gcc-rdynamic   enable gcc linking with -rdynamic for better backtraces])
+[  --enable-gcc-rdynamic         enable linking with -rdynamic for better backtraces (default if gcc)])
+AC_ARG_ENABLE(backtrace,
+[  --disable-backtrace,          disable crash backtraces (default autodetect)])
 AC_ARG_ENABLE(time-check,
 [  --disable-time-check          disable slow thread warning messages])
 AC_ARG_ENABLE(pcreposix,
@@ -290,8 +290,10 @@ if test x"${enable_gcc_ultra_verbose}" = x"yes" ; then
   CFLAGS="${CFLAGS} -Wpacked -Wpadded"
 fi
 
-if test x"${enable_gcc_rdynamic}" = x"yes" ; then
-  LDFLAGS="${LDFLAGS} -rdynamic"
+if test x"${enable_gcc_rdynamic}" != x"no" ; then
+  if test x"${enable_gcc_rdynamic}" = x"yes" -o x"$COMPILER" = x"GCC"; then
+    LDFLAGS="${LDFLAGS} -rdynamic"
+  fi
 fi
 
 if test x"${enable_time_check}" != x"no" ; then
@@ -442,7 +444,7 @@ dnl Check other header files.
 dnl -------------------------
 AC_CHECK_HEADERS([stropts.h sys/ksym.h sys/times.h sys/select.h \
 	sys/types.h linux/version.h netdb.h asm/types.h \
-	sys/param.h limits.h signal.h \
+	sys/cdefs.h sys/param.h limits.h signal.h \
 	sys/socket.h netinet/in.h time.h sys/time.h])
 
 dnl Utility macro to avoid retyping includes all the time
@@ -532,6 +534,18 @@ AC_CHECK_HEADERS([ucontext.h], [], [],
 #endif /* __USE_GNU */
 QUAGGA_INCLUDES
 ])
+
+m4_define([UCONTEXT_INCLUDES],
+[#include <ucontext.h>])dnl
+
+AC_CHECK_MEMBERS([ucontext_t.uc_mcontext.uc_regs],
+  [], [], [UCONTEXT_INCLUDES])
+AC_CHECK_MEMBERS([ucontext_t.uc_mcontext.regs],
+  [AC_CHECK_MEMBERS([ucontext_t.uc_mcontext.regs.nip],
+   [], [], [UCONTEXT_INCLUDES])],
+  [], [UCONTEXT_INCLUDES])
+AC_CHECK_MEMBERS([ucontext_t.uc_mcontext.gregs],
+  [], [], [UCONTEXT_INCLUDES])
 
 m4_define([QUAGGA_INCLUDES],
 QUAGGA_INCLUDES
@@ -1204,21 +1218,22 @@ dnl ----------
   if test "$zebra_cv_linux_ipv6" = "yes";then
     AC_MSG_CHECKING(for GNU libc >= 2.1)
     AC_DEFINE(HAVE_IPV6,1,Linux IPv6)
+    AC_DEFINE(LINUX_IPV6,1,Linux IPv6 stack)
+
     AC_EGREP_CPP(yes, [
 #include <features.h>
 #if __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 1
   yes
 #endif], 
       [glibc=yes
-       AC_DEFINE(LINUX_IPV6,1,Linux IPv6 stack)
        AC_MSG_RESULT(yes)], 
       AC_MSG_RESULT(no)
     )
     RIPNGD="ripngd"
     OSPF6D="ospf6d"
     if test "$glibc" != "yes"; then
-      INCLUDES="-I/usr/inet6/include"
       if test x`ls /usr/inet6/lib/libinet6.a 2>/dev/null` != x;then
+         INCLUDES="-I/usr/inet6/include"
          LIB_IPV6="-L/usr/inet6/lib -linet6"
       fi
     fi
@@ -1268,13 +1283,6 @@ if test "${enable_doc}" = "no";then
   DOC=""
 else
   DOC="doc"
-fi
-
-dnl can't use TESTS as name, that's special with automake
-if test "${enable_tests}" = "no";then
-  BUILD_TESTS=""
-else
-  BUILD_TESTS="tests"
 fi
 
 dnl --------------------
@@ -1370,7 +1378,6 @@ else
 fi
 
 AC_SUBST(DOC)
-AC_SUBST(BUILD_TESTS)
 AC_SUBST(ZEBRA)
 AC_SUBST(BGPD)
 AC_SUBST(RIPD)
@@ -1568,12 +1575,21 @@ AX_SYS_WEAK_ALIAS
 dnl ---------------------------
 dnl check for glibc 'backtrace'
 dnl --------------------------- 
-AC_CHECK_HEADER([execinfo.h],
-  [AC_CHECK_FUNC([backtrace],
-    [AC_DEFINE(HAVE_GLIBC_BACKTRACE,,[Glibc backtrace])
-     AC_DEFINE(HAVE_STACK_TRACE,,[Stack symbol decoding])
+if test x"${enable_backtrace}" != x"no" ; then
+  backtrace_ok=no
+  AC_CHECK_HEADER([execinfo.h], [
+    AC_SEARCH_LIBS([backtrace], [execinfo], [
+      AC_DEFINE(HAVE_GLIBC_BACKTRACE,,[Glibc backtrace])
+      AC_DEFINE(HAVE_STACK_TRACE,,[Stack symbol decoding])
+      backtrace_ok=yes
+    ],, [-lm])
   ])
-])
+
+  if test x"${enable_backtrace}" = x"yes" -a x"${backtrace_ok}" = x"no"; then
+    dnl user explicitly requested backtrace but we failed to find support
+    AC_MSG_FAILURE([failed to find backtrace support])
+  fi
+fi
 
 dnl -----------------------------------------
 dnl check for malloc mallinfo struct and call

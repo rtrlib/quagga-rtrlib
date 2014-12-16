@@ -32,7 +32,7 @@
 #include "zclient.h"
 #include "memory.h"
 #include "table.h"
-
+
 /* Zebra client events. */
 enum event {ZCLIENT_SCHEDULE, ZCLIENT_READ, ZCLIENT_CONNECT};
 
@@ -45,7 +45,7 @@ char *zclient_serv_path = NULL;
 
 /* This file local debug flag. */
 int zclient_debug = 0;
-
+
 /* Allocate zclient structure. */
 struct zclient *
 zclient_new ()
@@ -413,7 +413,7 @@ zclient_connect (struct thread *t)
 
   return zclient_start (zclient);
 }
-
+
  /* 
   * "xdr_encode"-like interface that allows daemon (client) to send
   * a message to zebra server for a route that needs to be
@@ -805,6 +805,16 @@ zebra_interface_address_read (int type, struct stream *s)
 	   ifc->flags = ifc_flags;
 	   if (ifc->destination)
 	     ifc->destination->prefixlen = ifc->address->prefixlen;
+	   else if (CHECK_FLAG(ifc->flags, ZEBRA_IFA_PEER))
+	     {
+	       /* carp interfaces on OpenBSD with 0.0.0.0/0 as "peer" */
+	       char buf[BUFSIZ];
+	       prefix2str (ifc->address, buf, sizeof(buf));
+	       zlog_warn("warning: interface %s address %s "
+		    "with peer flag set, but no peer address!",
+		    ifp->name, buf);
+	       UNSET_FLAG(ifc->flags, ZEBRA_IFA_PEER);
+	     }
 	 }
     }
   else
@@ -816,7 +826,7 @@ zebra_interface_address_read (int type, struct stream *s)
   return ifc;
 }
 
-
+
 /* Zebra client message read function. */
 static int
 zclient_read (struct thread *thread)

@@ -40,6 +40,7 @@ typedef int socklen_t;
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -50,7 +51,6 @@ typedef int socklen_t;
 #ifdef HAVE_STROPTS_H
 #include <stropts.h>
 #endif /* HAVE_STROPTS_H */
-#include <sys/fcntl.h>
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>
 #endif /* HAVE_SYS_SELECT_H */
@@ -175,7 +175,6 @@ typedef int socklen_t;
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/filter.h>
-#include <stddef.h>
 #else
 #define RT_TABLE_MAIN		0
 #endif /* HAVE_NETLINK */
@@ -359,7 +358,8 @@ struct in_pktinfo
  * OpenBSD: network byte order, apart from older versions which are as per 
  *          *BSD
  */
-#if defined(__NetBSD__) || defined(__FreeBSD__) \
+#if defined(__NetBSD__) \
+   || (defined(__FreeBSD__) && (__FreeBSD_version < 1100030)) \
    || (defined(__OpenBSD__) && (OpenBSD < 200311)) \
    || (defined(__APPLE__)) \
    || (defined(SUNOS_5) && defined(WORDS_BIGENDIAN))

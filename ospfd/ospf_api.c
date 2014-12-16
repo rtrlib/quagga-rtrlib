@@ -464,7 +464,7 @@ new_msg_register_event (u_int32_t seqnum, struct lsa_filter_type *filter)
 {
   u_char buf[OSPF_API_MAX_MSG_SIZE];
   struct msg_register_event *emsg;
-  int len;
+  size_t len;
 
   emsg = (struct msg_register_event *) buf;
   len = sizeof (struct msg_register_event) +
@@ -472,6 +472,9 @@ new_msg_register_event (u_int32_t seqnum, struct lsa_filter_type *filter)
   emsg->filter.typemask = htons (filter->typemask);
   emsg->filter.origin = filter->origin;
   emsg->filter.num_areas = filter->num_areas;
+  if (len > sizeof (buf))
+    len = sizeof(buf);
+  /* API broken - missing memcpy to fill data */
   return msg_new (MSG_REGISTER_EVENT, emsg, seqnum, len);
 }
 
@@ -480,7 +483,7 @@ new_msg_sync_lsdb (u_int32_t seqnum, struct lsa_filter_type *filter)
 {
   u_char buf[OSPF_API_MAX_MSG_SIZE];
   struct msg_sync_lsdb *smsg;
-  int len;
+  size_t len;
 
   smsg = (struct msg_sync_lsdb *) buf;
   len = sizeof (struct msg_sync_lsdb) +
@@ -488,6 +491,9 @@ new_msg_sync_lsdb (u_int32_t seqnum, struct lsa_filter_type *filter)
   smsg->filter.typemask = htons (filter->typemask);
   smsg->filter.origin = filter->origin;
   smsg->filter.num_areas = filter->num_areas;
+  if (len > sizeof (buf))
+    len = sizeof(buf);
+  /* API broken - missing memcpy to fill data */
   return msg_new (MSG_SYNC_LSDB, smsg, seqnum, len);
 }
 
@@ -498,16 +504,18 @@ new_msg_originate_request (u_int32_t seqnum,
 			   struct in_addr area_id, struct lsa_header *data)
 {
   struct msg_originate_request *omsg;
-  int omsglen;
+  size_t omsglen;
   char buf[OSPF_API_MAX_MSG_SIZE];
-
-  omsglen = sizeof (struct msg_originate_request) - sizeof (struct lsa_header)
-    + ntohs (data->length);
 
   omsg = (struct msg_originate_request *) buf;
   omsg->ifaddr = ifaddr;
   omsg->area_id = area_id;
-  memcpy (&omsg->data, data, ntohs (data->length));
+
+  omsglen = ntohs (data->length);
+  if (omsglen > sizeof (buf) - offsetof (struct msg_originate_request, data))
+    omsglen = sizeof (buf) - offsetof (struct msg_originate_request, data);
+  memcpy (&omsg->data, data, omsglen);
+  omsglen += sizeof (struct msg_originate_request) - sizeof (struct lsa_header);
 
   return msg_new (MSG_ORIGINATE_REQUEST, omsg, seqnum, omsglen);
 }
@@ -622,18 +630,21 @@ new_msg_lsa_change_notify (u_char msgtype,
 {
   u_char buf[OSPF_API_MAX_MSG_SIZE];
   struct msg_lsa_change_notify *nmsg;
-  int len;
+  size_t len;
 
   assert (data);
 
   nmsg = (struct msg_lsa_change_notify *) buf;
-  len = ntohs (data->length) + sizeof (struct msg_lsa_change_notify)
-    - sizeof (struct lsa_header);
   nmsg->ifaddr = ifaddr;
   nmsg->area_id = area_id;
   nmsg->is_self_originated = is_self_originated;
   memset (&nmsg->pad, 0, sizeof (nmsg->pad));
-  memcpy (&nmsg->data, data, ntohs (data->length));
+
+  len = ntohs (data->length);
+  if (len > sizeof (buf) - offsetof (struct msg_lsa_change_notify, data))
+    len = sizeof (buf) - offsetof (struct msg_lsa_change_notify, data);
+  memcpy (&nmsg->data, data, len);
+  len += sizeof (struct msg_lsa_change_notify) - sizeof (struct lsa_header);
 
   return msg_new (msgtype, nmsg, seqnum, len);
 }

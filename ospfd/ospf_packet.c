@@ -323,7 +323,7 @@ ospf_packet_max (struct ospf_interface *oi)
   return max;
 }
 
-
+
 static int
 ospf_check_md5_digest (struct ospf_interface *oi, struct ospf_header *ospfh)
 {
@@ -383,7 +383,7 @@ static int
 ospf_make_md5_digest (struct ospf_interface *oi, struct ospf_packet *op)
 {
   struct ospf_header *ospfh;
-  unsigned char digest[OSPF_AUTH_MD5_SIZE];
+  unsigned char digest[OSPF_AUTH_MD5_SIZE] = {0};
   MD5_CTX ctx;
   void *ibuf;
   u_int32_t t;
@@ -410,7 +410,7 @@ ospf_make_md5_digest (struct ospf_interface *oi, struct ospf_packet *op)
 
   /* Get MD5 Authentication key from auth_key list. */
   if (list_isempty (OSPF_IF_PARAM (oi, auth_crypt)))
-    auth_key = (const u_int8_t *) "";
+    auth_key = (const u_int8_t *) digest;
   else
     {
       ck = listgetdata (listtail(OSPF_IF_PARAM (oi, auth_crypt)));
@@ -438,7 +438,7 @@ ospf_make_md5_digest (struct ospf_interface *oi, struct ospf_packet *op)
   return OSPF_AUTH_MD5_SIZE;
 }
 
-
+
 static int
 ospf_ls_req_timer (struct thread *thread)
 {
@@ -789,6 +789,9 @@ ospf_write (struct thread *thread)
   /* Now delete packet from queue. */
   ospf_packet_delete (oi);
 
+  /* Move this interface to the tail of write_q to
+	 serve everyone in a round robin fashion */
+  listnode_move_to_tail (ospf->oi_write_q, node);
   if (ospf_fifo_head (oi->obuf) == NULL)
     {
       oi->on_write_q = 0;
@@ -1823,6 +1826,27 @@ ospf_ls_upd (struct ip *iph, struct ospf_header *ospfh,
 	    DISCARD_LSA (lsa,2);
 	  }
 
+      /* VU229804: Router-LSA Adv-ID must be equal to LS-ID */
+      if (lsa->data->type == OSPF_ROUTER_LSA)
+	if (!IPV4_ADDR_SAME(&lsa->data->id, &lsa->data->adv_router))
+	  {
+	    char buf1[INET_ADDRSTRLEN];
+	    char buf2[INET_ADDRSTRLEN];
+	    char buf3[INET_ADDRSTRLEN];
+
+	    zlog_err("Incoming Router-LSA from %s with "
+		      "Adv-ID[%s] != LS-ID[%s]",
+		      inet_ntop (AF_INET, &ospfh->router_id,
+				 buf1, INET_ADDRSTRLEN),
+		      inet_ntop (AF_INET, &lsa->data->id,
+				 buf2, INET_ADDRSTRLEN),
+		      inet_ntop (AF_INET, &lsa->data->adv_router,
+				 buf3, INET_ADDRSTRLEN));
+	    zlog_err("OSPF domain compromised by attack or corruption. "
+		     "Verify correct operation of -ALL- OSPF routers.");
+	    DISCARD_LSA (lsa, 0);
+	  }
+
       /* Find the LSA in the current database. */
 
       current = ospf_lsa_lookup_by_header (oi->area, lsa->data);
@@ -2099,7 +2123,7 @@ ospf_ls_ack (struct ip *iph, struct ospf_header *ospfh,
 
       lsr = ospf_ls_retransmit_lookup (nbr, lsa);
 
-      if (lsr != NULL && lsr->data->ls_seqnum == lsa->data->ls_seqnum)
+      if (lsr != NULL && ospf_lsa_more_recent (lsr, lsa) == 0)
         {
 #ifdef HAVE_OPAQUE_LSA
           if (IS_OPAQUE_LSA (lsr->data->type))
@@ -2115,7 +2139,7 @@ ospf_ls_ack (struct ip *iph, struct ospf_header *ospfh,
 
   return;
 }
-
+
 static struct stream *
 ospf_recv_packet (int fd, struct interface **ifp, struct stream *ibuf)
 {
@@ -3305,7 +3329,7 @@ ospf_make_ls_upd (struct ospf_interface *oi, struct list *update, struct stream 
       u_int16_t ls_age;
 
       if (IS_DEBUG_OSPF_EVENT)
-        zlog_debug ("ospf_make_ls_upd: List Iteration");
+        zlog_debug ("ospf_make_ls_upd: List Iteration %d", count);
 
       lsa = listgetdata (node);
 
@@ -3711,7 +3735,8 @@ ospf_ls_upd_queue_send (struct ospf_interface *oi, struct list *update,
   u_int16_t length = OSPF_HEADER_SIZE;
 
   if (IS_DEBUG_OSPF_EVENT)
-    zlog_debug ("listcount = %d, dst %s", listcount (update), inet_ntoa(addr));
+    zlog_debug ("listcount = %d, [%s]dst %s", listcount (update), IF_NAME(oi),
+			    inet_ntoa(addr));
   
   op = ospf_ls_upd_packet_new (update, oi);
 
