@@ -44,7 +44,7 @@
 /**********************************/
 /** Declaration of variables     **/
 /**********************************/
-rtr_mgr_config rtr_config;
+struct rtr_mgr_config rtr_config;
 int rtr_is_running;
 int route_map_active;
 
@@ -72,9 +72,9 @@ extern void bgp_process(struct bgp *bgp, struct bgp_node *rn, afi_t afi, safi_t 
 /*****************************************/
 /** Declaration of private functions    **/
 /*****************************************/
-static void list_all_nodes(struct vty *vty, const lpfst_node* node, unsigned int* count);
-static void print_record(struct vty *vty, const lpfst_node* node);
-static void update_cb(struct pfx_table* p, const pfx_record rec, const bool added);
+static void list_all_nodes(struct vty *vty, const struct lpfst_node* node, unsigned int* count);
+static void print_record(struct vty *vty, const struct lpfst_node* node);
+static void update_cb(struct pfx_table* p, const struct pfx_record rec, const bool added);
 static void ipv6_addr_to_network_byte_order(const uint32_t* src, uint32_t* dest);
 static void revalidate_prefix(struct bgp* bgp, afi_t afi, struct prefix *prefix);
 
@@ -120,14 +120,15 @@ void
 rpki_start()
 {
   unsigned int waiting_time = 0;
-  rtr_config.len = get_number_of_cache_groups();
-  rtr_config.groups = get_rtr_mgr_groups();
+  unsigned int group_len = get_number_of_cache_groups();
+  struct rtr_mgr_group* groups = get_rtr_mgr_groups();
   if (rtr_config.len == 0 || rtr_config.groups == NULL )
     {
       RPKI_DEBUG("No caches were found in config. Prefix validation is off.");
       return;
     }
-  rtr_mgr_init(&rtr_config, polling_period, timeout, &update_cb);
+  struct rtr_mgr_config* conf = rtr_mgr_init(groups, group_len, 60, 120, &update_cb, NULL, NULL, NULL);
+
   rtr_mgr_start(&rtr_config);
   rtr_is_running = 1;
   RPKI_DEBUG("Waiting for rtr connection to synchronize.");
@@ -237,8 +238,8 @@ rpki_validate_prefix(struct peer* peer, struct attr* attr,
 {
   struct assegment* as_segment;
   as_t as_number = 0;
-  ip_addr ip_addr_prefix;
-  pfxv_state result;
+  struct ip_addr ip_addr_prefix;
+  enum pfxv_state result;
   char buf[BUFSIZ];
   const char* prefix_string;
 
@@ -373,7 +374,7 @@ rpki_revalidate_all_routes(struct bgp* bgp, afi_t afi)
 /*****************************************/
 
 static void
-update_cb(struct pfx_table* p __attribute__ ((unused)), const pfx_record rec,
+update_cb(struct pfx_table* p __attribute__ ((unused)), const struct pfx_record rec,
     const bool added __attribute__ ((unused)))
 {
   struct bgp* bgp;
@@ -446,7 +447,7 @@ revalidate_prefix(struct bgp* bgp, afi_t afi, struct prefix *prefix)
 }
 
 static void
-list_all_nodes(struct vty *vty, const lpfst_node* node, unsigned int* count)
+list_all_nodes(struct vty *vty, const struct lpfst_node* node, unsigned int* count)
 {
   *count += 1;
 
@@ -464,7 +465,7 @@ list_all_nodes(struct vty *vty, const lpfst_node* node, unsigned int* count)
 }
 
 static void
-print_record(struct vty *vty, const lpfst_node* node)
+print_record(struct vty *vty, const struct lpfst_node* node)
 {
   unsigned int i;
   char ip[INET6_ADDRSTRLEN];
@@ -480,6 +481,7 @@ print_record(struct vty *vty, const lpfst_node* node)
 static void
 ipv6_addr_to_network_byte_order(const uint32_t* src, uint32_t* dest)
 {
-  for (int i = 0; i < 4; i++)
+    int i;
+    for (i = 0; i < 4; i++)
     dest[i] = htonl(src[i]);
 }

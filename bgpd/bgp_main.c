@@ -444,9 +444,6 @@ main (int argc, char **argv)
   rpki_init();
   #endif
 
-  /* Sort CLI commands. */
-  sort_node ();
-
   /* Parse config file. */
   vty_read_config (config_file, config_default);
 
