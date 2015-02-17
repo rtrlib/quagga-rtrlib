@@ -449,7 +449,7 @@ DEFUN (rpki_polling_period,
     {
       return CMD_ERR_INCOMPLETE;
     }
-  VTY_GET_INTEGER_RANGE("polling_period", polling_period, argv[0], 1, 86400);
+  VTY_GET_INTEGER_RANGE("polling_period", polling_period, argv[0], 1, 3600);
   return CMD_SUCCESS;
 }
 
@@ -461,34 +461,6 @@ DEFUN (no_rpki_polling_period,
     "Set polling period back to default\n")
 {
   polling_period = POLLING_PERIOD_DEFAULT;
-  return CMD_SUCCESS;
-}
-
-DEFUN (rpki_expire_interval,
-    rpki_expire_interval_cmd,
-    "rpki expire_interval " CMD_EXPIRE_INTERVAL_RANGE,
-    RPKI_OUTPUT_STRING
-    "Set expire interval\n"
-    "Expire interval value in seconds\n")
-{
-  if (argc != 1)
-    {
-      return CMD_ERR_INCOMPLETE;
-    }
-  VTY_GET_INTEGER_RANGE("expire_interval", expire_interval, argv[0], 1, 172800);
-  return CMD_SUCCESS;
-}
-
-DEFUN (no_rpki_expire_interval,
-    no_rpki_expire_interval_cmd,
-    "no rpki expire interval ",
-    NO_STR
-    RPKI_OUTPUT_STRING
-    "Set expire interval back to default\n")
-{
-  //Expire interval shouldt be lower then polling_period, so
-  //there is no default value.
-  expire_interval = polling_period + 60;
   return CMD_SUCCESS;
 }
 
