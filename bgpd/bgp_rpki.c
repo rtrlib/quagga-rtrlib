@@ -44,7 +44,7 @@
 /**********************************/
 /** Declaration of variables     **/
 /**********************************/
-struct rtr_mgr_config rtr_config;
+struct rtr_mgr_config* rtr_config;
 int rtr_is_running;
 int route_map_active;
 
@@ -96,7 +96,7 @@ rpki_is_route_map_active()
 inline int
 rpki_is_synchronized(void)
 {
-  return rtr_is_running && rtr_mgr_conf_in_sync(&rtr_config);
+  return rtr_is_running && rtr_mgr_conf_in_sync(rtr_config);
 }
 
 inline int
@@ -122,25 +122,25 @@ rpki_start()
   unsigned int waiting_time = 0;
   unsigned int group_len = get_number_of_cache_groups();
   struct rtr_mgr_group* groups = get_rtr_mgr_groups();
-  if (rtr_config.len == 0 || rtr_config.groups == NULL )
+  if (group_len == 0 || groups == NULL )
     {
       RPKI_DEBUG("No caches were found in config. Prefix validation is off.");
       return;
     }
-  struct rtr_mgr_config* conf = rtr_mgr_init(groups, group_len, 60, 120, &update_cb, NULL, NULL, NULL);
+  rtr_config = rtr_mgr_init(groups, group_len, 60, 120, &update_cb, NULL, NULL, NULL);
 
-  rtr_mgr_start(&rtr_config);
+  rtr_mgr_start(rtr_config);
   rtr_is_running = 1;
   RPKI_DEBUG("Waiting for rtr connection to synchronize.");
   while (waiting_time++ <= initial_synchronisation_timeout)
     {
-      if (rtr_mgr_conf_in_sync(&rtr_config))
+      if (rtr_mgr_conf_in_sync(rtr_config))
         {
           break;
         }
       sleep(1);
     }
-  if (rtr_mgr_conf_in_sync(&rtr_config))
+  if (rtr_mgr_conf_in_sync(rtr_config))
     {
       RPKI_DEBUG("Got synchronisation with at least one RPKI cache!");
     }
@@ -156,8 +156,8 @@ rpki_reset_session(void)
   RPKI_DEBUG("Resetting RPKI Session");
   if (rtr_is_running)
     {
-      rtr_mgr_stop(&rtr_config);
-      rtr_mgr_free(&rtr_config);
+      rtr_mgr_stop(rtr_config);
+      rtr_mgr_free(rtr_config);
       rtr_is_running = 0;
     }
   rpki_start();
@@ -167,10 +167,10 @@ void
 rpki_finish(void)
 {
   RPKI_DEBUG("Stopping");
-  rtr_mgr_stop(&rtr_config);
-  rtr_mgr_free(&rtr_config);
+  rtr_mgr_stop(rtr_config);
+  rtr_mgr_free(rtr_config);
   rtr_is_running = 0;
-  free_rtr_mgr_groups(rtr_config.groups, rtr_config.len);
+  free_rtr_mgr_groups(rtr_config->groups, rtr_config->len);
   delete_cache_group_list();
 }
 
@@ -178,12 +178,12 @@ int
 rpki_get_connected_group()
 {
   unsigned int i;
-  for (i = 0; i < rtr_config.len; i++)
+  for (i = 0; i < rtr_config->len; i++)
     {
-      if (rtr_config.groups[i].status == RTR_MGR_ESTABLISHED
-          || rtr_config.groups[i].status == RTR_MGR_CONNECTING)
+      if (rtr_config->groups[i].status == RTR_MGR_ESTABLISHED
+          || rtr_config->groups[i].status == RTR_MGR_CONNECTING)
         {
-          return rtr_config.groups[i].preference;
+          return rtr_config->groups[i].preference;
         }
     }
   return -1;
@@ -194,7 +194,7 @@ rpki_print_prefix_table(struct vty *vty)
 {
   unsigned int number_of_ipv4_prefixes = 0;
   unsigned int number_of_ipv6_prefixes = 0;
-  struct pfx_table* pfx_table = rtr_config.groups[0].sockets[0]->pfx_table;
+  struct pfx_table* pfx_table = rtr_config->groups[0].sockets[0]->pfx_table;
   vty_out(vty, "RPKI/RTR prefix table%s", VTY_NEWLINE);
   vty_out(vty, "%-40s %s  %s %s", "Prefix", "Prefix Length", "Origin-AS",
       VTY_NEWLINE);
@@ -303,7 +303,7 @@ rpki_validate_prefix(struct peer* peer, struct attr* attr,
     }
 
   // Do the actual validation
-  rtr_mgr_validate(&rtr_config, as_number, &ip_addr_prefix, prefix->prefixlen,
+  rtr_mgr_validate(rtr_config, as_number, &ip_addr_prefix, prefix->prefixlen,
       &result);
 
   // Print Debug output
