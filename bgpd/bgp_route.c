@@ -366,30 +366,6 @@ bgp_info_cmp (struct bgp *bgp, struct bgp_info *new, struct bgp_info *exist,
   if (exist == NULL)
     return 1;
 
-#ifdef HAVE_RPKI
-  /* Prefer valid to not found and not found to invalid.
-   * But if a "match rpki" command is used in a route-map
-   * we skip the check and leave the decision to the user.
-   * The user may e.g. set a local preference.
-   */
-  if(!CHECK_FLAG(bgp->flags, BGP_FLAG_VALIDATE_DISABLE)
-      && rpki_is_running() && !rpki_is_route_map_active())
-    {
-      if(exist->rpki_validation_status != new->rpki_validation_status)
-        {
-          if(exist->rpki_validation_status == RPKI_VALID
-              || new->rpki_validation_status == RPKI_INVALID)
-            {
-              return 0;
-            }
-          else
-            {
-              return 1;
-            }
-        }
-    }
-#endif
-
   newattr = new->attr;
   existattr = exist->attr;
   newattre = newattr->extra;
