@@ -169,10 +169,15 @@ void
 rpki_finish(void)
 {
   RPKI_DEBUG("Stopping");
+  struct rtr_mgr_group *groups;
+  unsigned int length;
+  groups = rtr_config->groups;
+  length = rtr_config->len;
+
   rtr_mgr_stop(rtr_config);
-  rtr_is_running = 0;
-  free_rtr_mgr_groups(rtr_config->groups, rtr_config->len);
   rtr_mgr_free(rtr_config);
+  rtr_is_running = 0;
+  free_rtr_mgr_groups(groups, length);
   delete_cache_group_list();
 }
 
