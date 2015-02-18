@@ -127,8 +127,10 @@ rpki_start()
       RPKI_DEBUG("No caches were found in config. Prefix validation is off.");
       return;
     }
-  rtr_config = rtr_mgr_init(groups, group_len, 60, 120, &update_cb, NULL, NULL, NULL);
+  RPKI_DEBUG("Init rtr_mgr.");
+  rtr_config = rtr_mgr_init(groups, group_len, polling_period, 2*polling_period, &update_cb, NULL, NULL, NULL);
 
+  RPKI_DEBUG("Starting rtr_mgr.");
   rtr_mgr_start(rtr_config);
   rtr_is_running = 1;
   RPKI_DEBUG("Waiting for rtr connection to synchronize.");
