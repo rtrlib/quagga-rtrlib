@@ -170,9 +170,9 @@ rpki_finish(void)
 {
   RPKI_DEBUG("Stopping");
   rtr_mgr_stop(rtr_config);
-  rtr_mgr_free(rtr_config);
   rtr_is_running = 0;
   free_rtr_mgr_groups(rtr_config->groups, rtr_config->len);
+  rtr_mgr_free(rtr_config);
   delete_cache_group_list();
 }
 
