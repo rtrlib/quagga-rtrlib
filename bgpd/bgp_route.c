@@ -1424,10 +1424,12 @@ bgp_best_selection (struct bgp *bgp, struct bgp_node *rn,
 	    bgp_mp_dmed_deselect (new_select);
 
 #ifdef HAVE_RPKI
-          if(!CHECK_FLAG(bgp->flags, BGP_FLAG_DISALLOW_INVALID))
-            {
-              new_select = ri;
-            }
+      if(CHECK_FLAG(bgp->flags, BGP_FLAG_VALIDATE_DISABLE) ||
+           (!(CHECK_FLAG(bgp->flags, BGP_FLAG_DISALLOW_INVALID) &&
+           ri->rpki_validation_status == RPKI_INVALID)))
+        {
+          new_select = ri;
+        }
 #else
 	  new_select = ri;
 #endif
