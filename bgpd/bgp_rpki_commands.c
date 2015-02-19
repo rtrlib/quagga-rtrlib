@@ -744,23 +744,23 @@ DEFUN (no_bgp_bestpath_prefix_validate_disable,
   return CMD_SUCCESS;
 }
 
-DEFUN (bgp_bestpath_prefix_validate_allow_invalid,
-      bgp_bestpath_prefix_validate_allow_invalid_cmd,
-       "bgp bestpath prefix-validate allow-invalid",
+DEFUN (bgp_bestpath_prefix_validate_disallow_invalid,
+      bgp_bestpath_prefix_validate_disallow_invalid_cmd,
+       "bgp bestpath prefix-validate disallow-invalid",
        "BGP specific commands\n"
        "Change the default bestpath selection\n"
        "Prefix validation attribute\n"
-       "Allow routes to be selected as bestpath even if their prefix validation status is invalid\n")
+       "Disallow routes to be selected as bestpath if their prefix validation status is invalid\n")
 {
   struct bgp *bgp = vty->index;
-  bgp_flag_set (bgp, BGP_FLAG_ALLOW_INVALID);
+  bgp_flag_set (bgp, BGP_FLAG_DISALLOW_INVALID);
   reprocess_routes(bgp);
   return CMD_SUCCESS;
 }
 
-DEFUN (no_bgp_bestpath_prefix_validate_allow_invalid,
-    no_bgp_bestpath_prefix_validate_allow_invalid_cmd,
-       "no bgp bestpath prefix-validate allow-invalid",
+DEFUN (no_bgp_bestpath_prefix_validate_disallow_invalid,
+    no_bgp_bestpath_prefix_validate_disallow_invalid_cmd,
+       "no bgp bestpath prefix-validate disallow-invalid",
        NO_STR
        "BGP specific commands\n"
        "Change the default bestpath selection\n"
@@ -768,7 +768,7 @@ DEFUN (no_bgp_bestpath_prefix_validate_allow_invalid,
        "Allow routes to be selected as bestpath even if their prefix validation status is invalid\n")
 {
   struct bgp *bgp = vty->index;
-  bgp_flag_unset (bgp, BGP_FLAG_ALLOW_INVALID);
+  bgp_flag_unset (bgp, BGP_FLAG_DISALLOW_INVALID);
   reprocess_routes(bgp);
   return CMD_SUCCESS;
 }
@@ -1105,8 +1105,8 @@ install_cli_commands()
   install_element(BGP_NODE, &no_bgp_bestpath_prefix_validate_disable_cmd);
 
   /* Install prefix_validate allow_invalid commands */
-  install_element(BGP_NODE, &bgp_bestpath_prefix_validate_allow_invalid_cmd);
-  install_element(BGP_NODE, &no_bgp_bestpath_prefix_validate_allow_invalid_cmd);
+  install_element(BGP_NODE, &bgp_bestpath_prefix_validate_disallow_invalid_cmd);
+  install_element(BGP_NODE, &no_bgp_bestpath_prefix_validate_disallow_invalid_cmd);
 
   /* Install show commands */
   install_element(VIEW_NODE, &show_rpki_prefix_table_cmd);

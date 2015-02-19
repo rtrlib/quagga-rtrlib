@@ -5339,7 +5339,7 @@ bgp_config_write (struct vty *vty)
   if (bgp_flag_check(bgp, BGP_FLAG_VALIDATE_DISABLE)) {
     vty_out(vty, " bgp bestpath prefix-validate disable%s", VTY_NEWLINE);
   }
-  if (bgp_flag_check(bgp, BGP_FLAG_ALLOW_INVALID)) {
+  if (bgp_flag_check(bgp, BGP_FLAG_DISALLOW_INVALID)) {
     vty_out(vty, " bgp bestpath prefix-validate allow-invalid%s", VTY_NEWLINE);
   }
       /* BGP network import check. */

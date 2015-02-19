@@ -115,7 +115,6 @@ rpki_init(void)
   expire_interval = EXPIRE_INTERVAL_DEFAULT;
   timeout = TIMEOUT_DEFAULT;
   initial_synchronisation_timeout = INITIAL_SYNCHRONISATION_TIMEOUT_DEFAULT;
-  bgp_flag_set (bgp, BGP_FLAG_ALLOW_INVALID);
 }
 
 void

@@ -124,7 +124,7 @@ struct bgp
 #define BGP_FLAG_ASPATH_CONFED            (1 << 13)
 #define BGP_FLAG_ASPATH_MULTIPATH_RELAX   (1 << 14)
 #define BGP_FLAG_VALIDATE_DISABLE         (1 << 15)
-#define BGP_FLAG_ALLOW_INVALID            (1 << 16)
+#define BGP_FLAG_DISALLOW_INVALID         (1 << 16)
 
   /* BGP Per AF flags */
   u_int32_t af_flags[AFI_MAX][SAFI_MAX];
