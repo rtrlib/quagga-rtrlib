@@ -449,7 +449,7 @@ DEFUN (rpki_polling_period,
     {
       return CMD_ERR_INCOMPLETE;
     }
-  VTY_GET_INTEGER_RANGE("polling_period", polling_period, argv[0], 1, 3600);
+  VTY_GET_INTEGER_RANGE("polling_period", polling_period, argv[0], 1, 86400);
   return CMD_SUCCESS;
 }
 
@@ -461,6 +461,38 @@ DEFUN (no_rpki_polling_period,
     "Set polling period back to default\n")
 {
   polling_period = POLLING_PERIOD_DEFAULT;
+  return CMD_SUCCESS;
+}
+
+DEFUN (rpki_expire_interval,
+    rpki_expire_interval_cmd,
+    "rpki expire_interval " CMD_EXPIRE_INTERVAL_RANGE,
+    RPKI_OUTPUT_STRING
+    "Set expire interval\n"
+    "Expire interval value\n")
+{
+  if (argc != 1)
+    {
+      return CMD_ERR_INCOMPLETE;
+    }
+  unsigned int tmp;
+  VTY_GET_INTEGER_RANGE("expire_interval", tmp, argv[0], 600, 172800);
+  if (tmp >= polling_period){
+      expire_interval = tmp;
+      return CMD_SUCCESS;
+  } else {
+      return CMD_ERR_NO_MATCH;
+  }
+}
+
+DEFUN (no_rpki_expire_interval,
+    no_rpki_expire_interval_cmd,
+    "no rpki expire_interval",
+    NO_STR
+    RPKI_OUTPUT_STRING
+    "Set expire interval back to default\n")
+{
+  expire_interval = polling_period * 2;
   return CMD_SUCCESS;
 }
 
@@ -1047,6 +1079,10 @@ install_cli_commands()
   /* Install rpki polling period commands */
   install_element(RPKI_NODE, &rpki_polling_period_cmd);
   install_element(RPKI_NODE, &no_rpki_polling_period_cmd);
+
+  /* Install rpki expire interval commands */
+  install_element(RPKI_NODE, &rpki_expire_interval_cmd);
+  install_element(RPKI_NODE, &no_rpki_expire_interval_cmd);
 
   /* Install rpki timeout commands */
   install_element(RPKI_NODE, &rpki_timeout_cmd);
