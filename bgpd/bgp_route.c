@@ -6134,6 +6134,21 @@ route_vty_out_detail (struct vty *vty, struct bgp *bgp, struct prefix *p,
       if (CHECK_FLAG (binfo->flags, BGP_INFO_SELECTED))
 	vty_out (vty, ", best");
 
+      #ifdef HAVE_RPKI
+      vty_out(vty, ", RPKI validation status: ");
+      switch (binfo->rpki_validation_status) {
+        case RPKI_VALID:
+	  vty_out(vty, "valid");
+          break;
+        case RPKI_INVALID:
+	  vty_out(vty, "invalid");
+          break;
+        case RPKI_NOTFOUND:
+	  vty_out(vty, "not found");
+          break;
+      }
+      #endif
+
       vty_out (vty, "%s", VTY_NEWLINE);
 	  
       /* Line 4 display Community */
@@ -6182,7 +6197,8 @@ route_vty_out_detail (struct vty *vty, struct bgp *bgp, struct prefix *p,
 
 #define BGP_SHOW_SCODE_HEADER "Status codes: s suppressed, d damped, "\
 			      "h history, * valid, > best, = multipath,%s"\
-		"              i internal, r RIB-failure, S Stale, R Removed%s"
+		"              i internal, r RIB-failure, S Stale, R Removed%s" 
+#define BGP_SHOW_RPKICODE_HEADER "RPKI codes: V valid, I invalid, N not found"
 #define BGP_SHOW_OCODE_HEADER "Origin codes: i - IGP, e - EGP, ? - incomplete%s%s"
 #define BGP_SHOW_HEADER "   Network          Next Hop            Metric LocPrf Weight Path%s"
 #define BGP_SHOW_DAMP_HEADER "   Network          From             Reuse    Path%s"
@@ -6386,13 +6402,13 @@ bgp_show_table (struct vty *vty, struct bgp_table *table, struct in_addr *router
 	      {
 		vty_out (vty, "BGP table version is 0, local router ID is %s%s", inet_ntoa (*router_id), VTY_NEWLINE);
 		vty_out (vty, BGP_SHOW_SCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
+
+        vty_out(vty, BGP_SHOW_OCODE_HEADER, "", VTY_NEWLINE);
 #ifdef HAVE_RPKI
-		vty_out(vty, BGP_SHOW_OCODE_HEADER, "", VTY_NEWLINE);
-		vty_out(vty, BGP_SHOW_RPKI_HEADER, VTY_NEWLINE);
+        vty_out(vty, BGP_SHOW_RPKICODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
 		vty_out(vty, "%s", VTY_NEWLINE);
-#else
-		vty_out (vty, BGP_SHOW_OCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
 #endif
+
 		if (type == bgp_show_type_dampend_paths
 		    || type == bgp_show_type_damp_neighbor)
 		  vty_out (vty, BGP_SHOW_DAMP_HEADER, VTY_NEWLINE);
@@ -9926,6 +9942,10 @@ show_adj_route (struct vty *vty, struct peer *peer, afi_t afi, safi_t safi,
     {
       vty_out (vty, "BGP table version is 0, local router ID is %s%s", inet_ntoa (bgp->router_id), VTY_NEWLINE);
       vty_out (vty, BGP_SHOW_SCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
+      #ifdef HAVE_RPKI
+      /* Provide RPKI Origin validation headers */
+      vty_out(vty, BGP_SHOW_RPKICODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
+      #endif
       vty_out (vty, BGP_SHOW_OCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
 
       vty_out (vty, "Originating default network 0.0.0.0%s%s",
@@ -9943,6 +9963,10 @@ show_adj_route (struct vty *vty, struct peer *peer, afi_t afi, safi_t safi,
 		{
 		  vty_out (vty, "BGP table version is 0, local router ID is %s%s", inet_ntoa (bgp->router_id), VTY_NEWLINE);
 		  vty_out (vty, BGP_SHOW_SCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
+		  #ifdef HAVE_RPKI
+		  /* Provide RPKI Origin validation headers */
+		  vty_out(vty, BGP_SHOW_RPKICODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
+		  #endif
 		  vty_out (vty, BGP_SHOW_OCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
 		  header1 = 0;
 		}
@@ -9967,6 +9991,10 @@ show_adj_route (struct vty *vty, struct peer *peer, afi_t afi, safi_t safi,
 		{
 		  vty_out (vty, "BGP table version is 0, local router ID is %s%s", inet_ntoa (bgp->router_id), VTY_NEWLINE);
 		  vty_out (vty, BGP_SHOW_SCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
+		  #ifdef HAVE_RPKI
+		  /* Provide RPKI Origin validation headers */
+		  vty_out(vty, BGP_SHOW_RPKICODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
+		  #endif
 		  vty_out (vty, BGP_SHOW_OCODE_HEADER, VTY_NEWLINE, VTY_NEWLINE);
 		  header1 = 0;
 		}
