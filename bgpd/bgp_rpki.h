@@ -39,9 +39,11 @@ int rpki_debug;
 /**********************************/
 /** Declaration of constants     **/
 /**********************************/
-#define CMD_POLLING_PERIOD_RANGE "<0-3600>"
+#define CMD_POLLING_PERIOD_RANGE "<1-86400>"
+#define CMD_EXPIRE_INTERVAL_RANGE "<600-172800>"
 #define CMD_TIMEOUT_RANGE "<1-4294967295>"
-#define POLLING_PERIOD_DEFAULT 300
+#define POLLING_PERIOD_DEFAULT 3600
+#define EXPIRE_INTERVAL_DEFAULT 7200
 #define TIMEOUT_DEFAULT 600
 #define INITIAL_SYNCHRONISATION_TIMEOUT_DEFAULT 30
 #define CALLBACK_TIMEOUT 10
@@ -54,6 +56,7 @@ int rpki_debug;
 /**********************************/
 struct list* cache_group_list;
 unsigned int polling_period;
+unsigned int expire_interval;
 unsigned int timeout;
 unsigned int initial_synchronisation_timeout;
 

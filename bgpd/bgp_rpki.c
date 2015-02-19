@@ -128,7 +128,7 @@ rpki_start()
       return;
     }
   RPKI_DEBUG("Init rtr_mgr.");
-  rtr_config = rtr_mgr_init(groups, group_len, polling_period, 2*polling_period, &update_cb, NULL, NULL, NULL);
+  rtr_config = rtr_mgr_init(groups, group_len, polling_period, expire_interval, &update_cb, NULL, NULL, NULL);
 
   RPKI_DEBUG("Starting rtr_mgr.");
   rtr_mgr_start(rtr_config);
