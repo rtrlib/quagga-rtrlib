@@ -112,6 +112,7 @@ rpki_init(void)
   install_cli_commands();
   rtr_is_running = 0;
   polling_period = POLLING_PERIOD_DEFAULT;
+  expire_interval = EXPIRE_INTERVAL_DEFAULT;
   timeout = TIMEOUT_DEFAULT;
   initial_synchronisation_timeout = INITIAL_SYNCHRONISATION_TIMEOUT_DEFAULT;
 }
