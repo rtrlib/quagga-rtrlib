@@ -6211,7 +6211,7 @@ route_vty_out_detail (struct vty *vty, struct bgp *bgp, struct prefix *p,
 #define BGP_SHOW_SCODE_HEADER "Status codes: s suppressed, d damped, "\
 			      "h history, * valid, > best, = multipath,%s"\
 		"              i internal, r RIB-failure, S Stale, R Removed%s" 
-#define BGP_SHOW_RPKICODE_HEADER "RPKI codes: V valid, I invalid, N not found"
+#define BGP_SHOW_RPKICODE_HEADER "RPKI codes: V valid, I invalid, N not found%s%s"
 #define BGP_SHOW_OCODE_HEADER "Origin codes: i - IGP, e - EGP, ? - incomplete%s%s"
 #define BGP_SHOW_HEADER "   Network          Next Hop            Metric LocPrf Weight Path%s"
 #define BGP_SHOW_DAMP_HEADER "   Network          From             Reuse    Path%s"
