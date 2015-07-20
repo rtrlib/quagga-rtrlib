@@ -26,6 +26,7 @@
 #include "bgpd/bgp_attr.h"
 #include "bgpd/bgpd.h"
 #include "bgpd/bgp_route.h"
+#include "sys/socket.h"
 
 /**********************************/
 /** Declaration of debug makros  **/
@@ -59,6 +60,9 @@ unsigned int polling_period;
 unsigned int expire_interval;
 unsigned int timeout;
 unsigned int initial_synchronisation_timeout;
+int rpki_sync_socket_rtr;
+int rpki_sync_socket_bgpd; 
+
 
 /**********************************/
 /** Declaration of functions     **/
@@ -66,6 +70,7 @@ unsigned int initial_synchronisation_timeout;
 void rpki_start(void);
 void rpki_reset_session(void);
 void rpki_init(void);
+void rpki_init_sync_socket(void);
 void rpki_finish(void);
 int rpki_is_synchronized(void);
 int rpki_is_running(void);

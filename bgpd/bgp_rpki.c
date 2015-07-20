@@ -77,6 +77,8 @@ static void print_record(struct vty *vty, const struct lpfst_node* node);
 static void update_cb(struct pfx_table* p, const struct pfx_record rec, const bool added);
 static void ipv6_addr_to_network_byte_order(const uint32_t* src, uint32_t* dest);
 static void revalidate_prefix(struct bgp* bgp, afi_t afi, struct prefix *prefix);
+static int rpki_update_cb_sync_bgpd(struct thread *thread);
+static void rpki_update_cb_sync_rtr(struct pfx_table* p __attribute__ ((unused)), const struct pfx_record rec, const bool added __attribute__ ((unused)));
 
 /*****************************************/
 /** Implementation of public functions  **/
@@ -106,6 +108,20 @@ rpki_is_running(void)
 }
 
 void
+rpki_init_sync_socket()
+{
+  int fds[2]; 
+  if(socketpair(PF_LOCAL, SOCK_DGRAM, 0, fds) != 0)
+    {
+       RPKI_DEBUG("Could not open rpki sync socket");
+       return;
+    }
+  rpki_sync_socket_rtr = fds[0];
+  rpki_sync_socket_bgpd = fds[1];
+  thread_add_read(master, rpki_update_cb_sync_bgpd, 0, rpki_sync_socket_bgpd);
+}
+
+void
 rpki_init(void)
 {
   rpki_debug = 0;
@@ -115,7 +131,10 @@ rpki_init(void)
   expire_interval = EXPIRE_INTERVAL_DEFAULT;
   timeout = TIMEOUT_DEFAULT;
   initial_synchronisation_timeout = INITIAL_SYNCHRONISATION_TIMEOUT_DEFAULT;
+  rpki_init_sync_socket(); 
 }
+
+
 
 void
 rpki_start()
@@ -129,7 +148,7 @@ rpki_start()
       return;
     }
   RPKI_DEBUG("Init rtr_mgr.");
-  rtr_config = rtr_mgr_init(groups, group_len, polling_period, expire_interval, &update_cb, NULL, NULL, NULL);
+  rtr_config = rtr_mgr_init(groups, group_len, polling_period, expire_interval, &rpki_update_cb_sync_rtr, NULL, NULL, NULL);
 
   RPKI_DEBUG("Starting rtr_mgr.");
   rtr_mgr_start(rtr_config);
@@ -380,6 +399,39 @@ rpki_revalidate_all_routes(struct bgp* bgp, afi_t afi)
 /*****************************************/
 /** Implementation of private functions **/
 /*****************************************/
+
+static int
+rpki_update_cb_sync_bgpd(struct thread *thread)
+{
+  struct pfx_record *rec = 0;
+  thread_add_read(master, rpki_update_cb_sync_bgpd, 0, rpki_sync_socket_bgpd);
+  int rtval = read(rpki_sync_socket_bgpd, rec, sizeof(rec));
+  if(rtval < 1)
+    {
+      RPKI_DEBUG("Could not read from rpki_sync_socket_bgpd");
+      //memory leak?
+      return rtval;
+    }
+  update_cb(NULL, *rec, NULL);
+  free(rec);
+  return 0;
+}
+
+
+static void
+rpki_update_cb_sync_rtr(struct pfx_table* p __attribute__ ((unused)), const struct pfx_record rec,
+    const bool added __attribute__ ((unused)))
+{
+
+  struct pfx_record *rec_copy = malloc(sizeof(struct pfx_record));
+  memcpy(rec_copy, &rec, sizeof(struct pfx_record));
+  int rtval = write(rpki_sync_socket_rtr, rec_copy, sizeof(*rec_copy));
+  if(rtval != 0)
+    {
+      RPKI_DEBUG("Could not write to rpki_sync_socket_rtr");
+      //Sonst noch was hier?
+    }
+}
 
 static void
 update_cb(struct pfx_table* p __attribute__ ((unused)), const struct pfx_record rec,
