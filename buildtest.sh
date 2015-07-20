@@ -12,11 +12,14 @@ configs_ext="gcc|$basecfg --enable-opaque-lsa --enable-ospf-te --enable-ospfclie
 configs_snmp="gcc|$basecfg --enable-opaque-lsa --enable-ospf-te --enable-ospfclient --enable-isis-topology --enable-snmp"
 configs_clang="clang|$basecfg --enable-opaque-lsa --enable-ospf-te --enable-ospfclient --enable-isis-topology"
 configs_icc="icc|$basecfg --enable-opaque-lsa --enable-ospf-te --enable-ospfclient --enable-isis-topology"
+configs_rpki="gcc|$basecfg --enable-opaque-lsa --enable-ospf-te --enable-ospfclient --enable-isis-topology --enable-rpki"
+
 
 defconfigs="base ext"
 net-snmp-config --version	&> /dev/null && defconfigs="$defconfigs snmp"
 clang --version			&> /dev/null && defconfigs="$defconfigs clang"
 icc --version			&> /dev/null && defconfigs="$defconfigs icc"
+pkg-config --modversion rtrlib	&> /dev/null && defconfigs="$defconfigs rpki"
 
 echo "enabled configurations: $defconfigs"
 
