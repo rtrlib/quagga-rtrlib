@@ -426,10 +426,9 @@ rpki_update_cb_sync_rtr(struct pfx_table* p __attribute__ ((unused)), const stru
   struct pfx_record *rec_copy = malloc(sizeof(struct pfx_record));
   memcpy(rec_copy, &rec, sizeof(struct pfx_record));
   int rtval = write(rpki_sync_socket_rtr, rec_copy, sizeof(*rec_copy));
-  if(rtval != 0)
+  if(rtval < 1)
     {
       RPKI_DEBUG("Could not write to rpki_sync_socket_rtr");
-      //Sonst noch was hier?
     }
 }
 
