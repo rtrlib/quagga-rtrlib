@@ -31,6 +31,7 @@
 #include "memory.h"
 #include "thread.h"
 #include "bgpd/bgp_table.h"
+#include "bgp_advertise.h"
 #include "bgpd/bgpd.h"
 #include "bgpd/bgp_debug.h"
 #include "bgpd/bgp_attr.h"
@@ -501,10 +502,23 @@ revalidate_prefix(struct bgp* bgp, afi_t afi, struct prefix *prefix)
             }
           if (status_changed)
             {
-              bgp_process(bgp, bgp_node, afi, safi);
+              int ret;
+              struct bgp_adj_in *ain;
+                for (ain = bgp_node->adj_in; ain; ain = ain->next){
+                  struct bgp_info *ri = bgp_node->info;
+                  u_char *tag = (ri && ri->extra) ? ri->extra->tag : NULL;
+                  ret = bgp_update (ain->peer, &bgp_node->p, ain->attr, afi, safi,
+                 		      ZEBRA_ROUTE_BGP, BGP_ROUTE_NORMAL,
+                 		      NULL, tag, 1);
+
+                  if (ret < 0) {
+                 	bgp_unlock_node (bgp_node);
+                    return;
+                  }
+                }
             }
+          }
         }
-    }
 }
 
 static void
