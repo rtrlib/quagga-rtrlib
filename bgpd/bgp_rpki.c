@@ -23,6 +23,7 @@
 #include <pthread.h>
 #include <time.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include "prefix.h"
 #include "log.h"
 #include "command.h"
@@ -31,6 +32,7 @@
 #include "thread.h"
 #include "bgpd/bgp_table.h"
 #include "bgpd/bgpd.h"
+#include "bgpd/bgp_debug.h"
 #include "bgpd/bgp_attr.h"
 #include "bgpd/bgp_aspath.h"
 #include "bgpd/bgp_rpki.h"
@@ -403,9 +405,9 @@ rpki_revalidate_all_routes(struct bgp* bgp, afi_t afi)
 static int
 rpki_update_cb_sync_bgpd(struct thread *thread)
 {
-  struct pfx_record *rec = 0;
+  struct pfx_record *rec;
   thread_add_read(master, rpki_update_cb_sync_bgpd, 0, rpki_sync_socket_bgpd);
-  int rtval = read(rpki_sync_socket_bgpd, rec, sizeof(rec));
+  int rtval = read(rpki_sync_socket_bgpd, &rec, sizeof(struct pfx_record *));
   if(rtval < 1)
     {
       RPKI_DEBUG("Could not read from rpki_sync_socket_bgpd");
@@ -425,7 +427,7 @@ rpki_update_cb_sync_rtr(struct pfx_table* p __attribute__ ((unused)), const stru
 
   struct pfx_record *rec_copy = malloc(sizeof(struct pfx_record));
   memcpy(rec_copy, &rec, sizeof(struct pfx_record));
-  int rtval = write(rpki_sync_socket_rtr, rec_copy, sizeof(*rec_copy));
+  int rtval = write(rpki_sync_socket_rtr, &rec_copy, sizeof(struct pfx_record *));
   if(rtval < 1)
     {
       RPKI_DEBUG("Could not write to rpki_sync_socket_rtr");
