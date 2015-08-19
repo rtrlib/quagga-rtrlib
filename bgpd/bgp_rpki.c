@@ -121,6 +121,7 @@ rpki_init_sync_socket()
     }
   rpki_sync_socket_rtr = fds[0];
   rpki_sync_socket_bgpd = fds[1];
+  fcntl(rpki_sync_socket_rtr, F_SETFL, O_NONBLOCK);
   thread_add_read(master, rpki_update_cb_sync_bgpd, 0, rpki_sync_socket_bgpd);
 }
 
