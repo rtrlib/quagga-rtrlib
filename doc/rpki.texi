@@ -1,0 +1,297 @@
+@c -*-texinfo-*-
+@c This is part of the Quagga Manual.
+@c @value{COPYRIGHT_STR}
+@c See file quagga.texi for copying conditions.
+@node Prefix Origin Validation Using RPKI
+@section Prefix Origin Validation Using RPKI
+
+Prefix Origin Validation allows BGP routers to verify if the origin AS of
+an IP prefix is legitimate to announce this IP prefix. The required
+attestation objects are stored in the Resource Public Key Infrastructure
+(@acronym{RPKI}).  However, RPKI-enabled routers do not store cryptographic
+data itself but only validation information. The validation of the
+cryptographic data (so called Route Origin Authorization, or short
+@acronym{ROA}, objects) will be performed by trusted cache servers. The
+RPKI/RTR protocol defines a standard mechanism to maintain the exchange of
+the prefix/origin AS mapping between the cache server and routers.
+In combination with a  BGP prefix origin validation scheme a router is able
+to verify received BGP updates without suffering from cryptographic
+complexity.
+
+
+The RPKI/RTR protocol is defined in @cite{RFC6810, The Resource Public Key
+Infrastructure (RPKI) to Router Protocol}, and the validation scheme in
+@cite{RFC6811, BGP Prefix Origin Validation}. The current version of Prefix
+Origin Validation in Quagga implements both RFCs.
+
+For a more detailed but still easy-to-read background, we suggest the
+following two articles:
+@enumerate
+@item @cite{Geoff Huston, Randy Bush: Securing BGP, In: The Internet
+Protocol Journal, Volume 14, No. 2, 2011.}
+@uref{http://www.cisco.com/web/about/ac123/ac147/archived_issues/ipj_14-2/142_bgp.html}
+
+@item @cite{Geoff Huston: Resource Certification, In: The Internet Protocol
+Journal, Volume 12, No.1, 2009.}
+@uref{http://www.cisco.com/web/about/ac123/ac147/archived_issues/ipj_12-1/121_resource.html}
+@end enumerate
+
+@menu
+* Features of the Current Implementation::
+* Enabling RPKI::
+* Configuring RPKI/RTR Cache Servers::
+* Validating BGP Updates::
+* Debugging::
+* Displaying RPKI::
+* RPKI Configuration Example::
+@end menu
+
+@node Features of the Current Implementation
+@subsection Features of the Current Implementation
+
+In a nutshell, the current implementation provides the following features
+@itemize @bullet
+@item The BGP router can connect to one or more RPKI cache servers to
+receive validated prefix data. Advanced failover can be implemented by
+server groups with different preference values.
+
+@item If no connection to an RPKI cache server can be established after a
+pre-defined timeout, the router will process routes without prefix origin
+validation. It still will try to establish a connection to an RPKI cache
+server in the background.
+
+@item The router will check if incoming routes can be found in the
+validated prefix table. The routes will be annotated with one of three
+validation states: valid, notfound, or invalid.
+
+@item By default the router will prefer valid routes over not found routes,
+and it will neither accept nor distribute invalid routes. Statically
+configured routes which are invalid will also not be announced to
+neighbors. The router can be configured allow invalid routes during the best
+path selection process.
+
+@item Route maps can be configured to match a specific RPKI validation
+state. This allows the creation of local policies, which handle BGP routes
+based on the outcome of the Prefix Origin Validation.
+
+@item When the router receives updated validation information from the RPKI
+cache server, all affected routes in the local routing table will be
+re-evaluated.
+
+@end itemize
+
+
+@node Enabling RPKI
+@subsection Enabling RPKI
+@deffn {Command} {enable-rpki} {}
+This command enters the RPKI configuration mode. All commands that start
+with @command{rpki} can only be used in this mode.
+
+When it is used in a telnet session, leaving of this mode will cause a
+restart of the rpki session with the current settings. This means that any
+changes of the rpki configuration will not come into effect before the rpki
+configuration mode is exited.
+
+Please note that executing this command alone does not activate prefix
+validation. You need to add at least one cache group including at least one
+reachable cache server.
+@end deffn
+
+@node Configuring RPKI/RTR Cache Servers
+@subsection Configuring RPKI/RTR Cache Servers
+
+The following commands are independent of a specific cache server or group
+of cache servers.
+
+@deffn {RPKI Command} {rpki polling_period <1-3600>} {}
+@deffnx {RPKI Command} {no rpki polling_period} {}
+Set the number of seconds the router waits until the router asks the cache again
+for updated data.
+
+The default value is 300 seconds.
+@end deffn
+
+@deffn {RPKI Command} {rpki timeout <1-4,294,967,296>} {}
+@deffnx {RPKI Command} {no rpki timeout} {}
+Set the number of seconds the router waits for the cache reply. If the
+cache server is not replying within this time period, the router deletes
+all received prefix records from the RPKI table.
+
+The default value is 600 seconds.
+@end deffn
+
+@deffn {RPKI Command} {rpki initial-synchronisation-timeout <1-4,294,967,296>} {}
+@deffnx {RPKI Command} {no rpki initial-synchronisation-timeout} {}
+Set the number of seconds until the first synchronization with the cache
+server needs to be completed. If the timeout expires, BGP routing is
+started without RPKI. The router will try to establish the cache server
+connection in the background.
+
+The default value is 30 seconds.
+@end deffn
+
+@noindent The following commands configure one or multiple cache servers.
+
+@deffn {RPKI Command} {rpki group <0-4,294,967,296>} {}
+@deffnx {RPKI Command} {no rpki group} {}
+Create a group of one or multiple cache servers. Each group is identified
+by a preference. The cache server of the group with the lowest preference will be
+chosen first for establishing an RPKI/RTR connection. If no cache server
+within the chosen group is reachable, the cache servers of the group with
+the next lowest preference will be selected.
+
+Deleting the cache group removes all associated cache servers and
+terminates the existing connection.
+@end deffn
+
+@deffn {RPKI Group Command} {rpki cache (@var{A.B.C.D}|@var{WORD}) @var{PORT} [@var{SSH_USERNAME}] [@var{SSH_PRIVKEY_PATH}] [@var{SSH_PUBKEY_PATH}] [@var{KNOWN_HOSTS_PATH}]} {}
+@deffnx {RPKI Group Command} {no rpki cache (@var{A.B.C.D}|@var{WORD}) [@var{PORT}]} {}
+Add a cache server to the cache group. By default the connection between
+router and cache server is based on plain TCP. Protecting the connection
+between router and cache server by SSH is optional.
+@end deffn
+
+@table @code
+@item @var{A.B.C.D}|@var{WORD}
+Address of the cache server.
+
+@item @var{PORT}
+Port number to connect to the cache server
+
+@item @var{SSH_USERNAME}
+SSH username to establish an SSH connection to the cache server.
+
+@item @var{SSH_PRIVKEY_PATH}
+Local path that includes the private key file of the cache server.
+
+@item @var{SSH_PUBKEY_PATH}
+Local path that includes the public key file of the cache server.
+
+@item @var{KNOWN_HOSTS_PATH}
+Local path that includes the known hosts file. The default value depends on the
+configuration of the operating system environment, usually
+@file{~/.ssh/known_hosts}.
+
+@end table
+
+@node Validating BGP Updates
+@subsection Validating BGP Updates
+
+@deffn {BGP Command} {bgp bestpath prefix-validate disallow-invalid} {}
+@deffnx {BGP Command} {no bgp bestpath prefix-validate disallow-invalid} {}
+Exclude all invalid prefixes from the best path selection.
+
+By default, invalid prefixes will be considered during the best path
+selection process.
+@end deffn
+
+@deffn {BGP Command} {bgp bestpath prefix-validate disable} {}
+@deffnx {BGP Command} {no bgp bestpath prefix-validate disable} {}
+Disable the validation of prefixes, which have been received via BGP. The
+router will still connect to the cache server and retrieve validation
+information. However, the data is not used in any way. This configuration
+is useful for configuration testing of the RPKI/RTR protocol.
+
+By default, routes are validated based on information retrieved from cache
+servers. Note that this validation does not influence best path selection,
+by default.
+@end deffn
+
+@deffn {Route Map Command} {match rpki @{notfound|invalid|valid@}} {}
+@deffnx {Route Map Command} {no match rpki @{notfound|invalid|valid@}} {}
+Create a clause for a route map to match prefixes with the specified RPKI state.
+
+@strong{Note} that the matching of invalid prefixes requires that invalid
+prefixes are considered for best path selection, i.e., @command{bgp
+bestpath prefix-validate allow-invalid} is enabled.
+
+In the following example, the router prefers valid routes over invalid
+prefixes because invalid routes have a lower local preference.
+@example
+  ! Allow for invalid routes in route selection process
+  route bgp 60001
+   bgp bestpath prefix-validate allow-invalid
+  !
+  ! Set local preference of invalid prefixes to 10
+  route-map rpki permit 10
+   match rpki invalid
+   set local-preference 10
+  !
+  ! Set local preference of valid prefixes to 500
+  route-map rpki permit 500
+   match rpki valid
+   set local-preference 500
+@end example
+
+@end deffn
+
+@node Debugging
+@subsection Debugging
+
+@deffn {Command} {debug rpki} {}
+@deffnx {Command} {no debug rpki} {}
+Enable or disable debugging output for RPKI.
+@end deffn
+
+
+@node Displaying RPKI
+@subsection Displaying RPKI
+
+@deffn {Command} {show rpki prefix-table} {}
+Display all prefix data which have been received from the cache
+servers and stored in the router. Based on this data, the router validates
+BGP Updates.
+@end deffn
+
+@deffn {Command} {show rpki cache-connection} {}
+Display all configured cache servers.
+@end deffn
+
+@node RPKI Configuration Example
+@subsection RPKI Configuration Example
+
+
+@example
+hostname bgpd1
+password zebra
+! log stdout
+debug bgp updates
+debug bgp keepalives
+debug rpki
+!
+enable-rpki
+ rpki polling_period 1000
+ rpki timeout 10
+ rpki group 1
+  ! SSH Example:
+  rpki cache rpki.realmv6.org 22 rtr-ssh ./ssh_key/id_rsa ./ssh_key/id_rsa.pub
+  ! TCP Example:
+  rpki cache rpki-validator.realmv6.org 42420
+!
+router bgp 60001
+ bgp router-id 141.22.28.223
+ bgp bestpath prefix-validate allow-invalid
+ network 192.168.0.0/16
+ neighbor 123.123.123.0 remote-as 60002
+ neighbor 123.123.123.0 route-map rpki in
+!
+ address-family ipv6
+  neighbor 123.123.123.0 activate
+   neighbor 123.123.123.0 route-map rpki in
+ exit-address-family
+!
+route-map rpki permit 10
+ match rpki invalid
+ set local-preference 10
+!
+route-map rpki permit 20
+ match rpki notfound
+ set local-preference 20
+!
+route-map rpki permit 30
+ match rpki valid
+ set local-preference 30
+!
+route-map rpki permit 40
+!
+@end example
