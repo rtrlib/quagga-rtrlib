@@ -269,7 +269,7 @@ rpki_validate_prefix(struct peer* peer, struct attr* attr,
 {
   struct assegment* as_segment;
   as_t as_number = 0;
-  struct ip_addr ip_addr_prefix;
+  struct lrtr_ip_addr ip_addr_prefix;
   enum pfxv_state result;
   char buf[BUFSIZ];
   const char* prefix_string;
@@ -317,14 +317,14 @@ rpki_validate_prefix(struct peer* peer, struct attr* attr,
   switch (prefix->family)
     {
     case AF_INET:
-      ip_addr_prefix.ver = IPV4;
+      ip_addr_prefix.ver = LRTR_IPV4;
       ip_addr_prefix.u.addr4.addr = ntohl(prefix->u.prefix4.s_addr);
       break;
 
 #ifdef HAVE_IPV6
     case AF_INET6:
-      ip_addr_prefix.ver = IPV6;
-      ipv6_addr_to_host_byte_order(prefix->u.prefix6.s6_addr32,
+      ip_addr_prefix.ver = LRTR_IPV6;
+      lrtr_ipv6_addr_to_host_byte_order(prefix->u.prefix6.s6_addr32,
           ip_addr_prefix.u.addr6.addr);
       break;
 #endif /* HAVE_IPV6 */
@@ -460,12 +460,12 @@ update_cb(struct pfx_table* p __attribute__ ((unused)), const struct pfx_record 
         {
           switch (rec.prefix.ver)
             {
-            case IPV4:
+            case LRTR_IPV4:
               prefix.family = AFI_IP;
               prefix.u.prefix4.s_addr = htonl(rec.prefix.u.addr4.addr);
               revalidate_prefix(bgp, AFI_IP, &prefix);
               break;
-            case IPV6:
+            case LRTR_IPV6:
               prefix.family = AFI_IP6;
               ipv6_addr_to_network_byte_order(rec.prefix.u.addr6.addr,
                   prefix.u.prefix6.s6_addr32);
@@ -548,7 +548,7 @@ print_record(struct vty *vty, const struct lpfst_node* node)
   node_data* data = (node_data*) node->data;
   for (i = 0; i < data->len; ++i)
     {
-      ip_addr_to_str(&(node->prefix), ip, sizeof(ip));
+      lrtr_ip_addr_to_str(&(node->prefix), ip, sizeof(ip));
       vty_out(vty, "%-40s   %3u - %3u   %10u %s", ip, node->len,
           data->ary[i].max_len, data->ary[i].asn, VTY_NEWLINE);
     }
