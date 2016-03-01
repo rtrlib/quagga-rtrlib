@@ -70,6 +70,12 @@ extern struct zebra_t zebrad;
 #define ROUNDUP(a)	RT_ROUNDUP(a)
 #endif /* defined(RT_ROUNDUP) */
 
+#if defined(SUNOS_5)
+/* Solaris has struct sockaddr_in[6] definitions at 16 / 32 bytes size,
+ * so the whole concept doesn't really apply. */
+#define ROUNDUP(a)      (a)
+#endif
+
 /*
  * If ROUNDUP has not yet been defined in terms of platform-provided
  * defines, attempt to cope with heuristics.
@@ -134,6 +140,8 @@ extern struct zebra_t zebrad;
 static inline void
 rta_copy (union sockunion *dest, caddr_t src) {
   int len;
+  if (!dest)
+    return;
 #ifdef HAVE_STRUCT_SOCKADDR_SA_LEN
   len = (((struct sockaddr *)src)->sa_len > sizeof (*dest)) ?
             sizeof (*dest) : ((struct sockaddr *)src)->sa_len ;
@@ -148,8 +156,7 @@ rta_copy (union sockunion *dest, caddr_t src) {
   if ((RTMADDRS) & (RTA)) \
     { \
       int len = SAROUNDUP ((PNT)); \
-      if ( ((DEST) != NULL) && \
-           af_check (((struct sockaddr *)(PNT))->sa_family)) \
+      if (af_check (((struct sockaddr *)(PNT))->sa_family)) \
         rta_copy((DEST), (PNT)); \
       (PNT) += len; \
     }
@@ -157,8 +164,7 @@ rta_copy (union sockunion *dest, caddr_t src) {
   if ((RTMADDRS) & (RTA)) \
     { \
       int len = SAROUNDUP ((PNT)); \
-      if ((DEST) != NULL) \
-        rta_copy((DEST), (PNT)); \
+      rta_copy((DEST), (PNT)); \
       (PNT) += len; \
     }
 
@@ -732,7 +738,9 @@ ifam_read (struct ifa_msghdr *ifam)
       /* Unset interface index from link-local address when IPv6 stack
 	 is KAME. */
       if (IN6_IS_ADDR_LINKLOCAL (&addr.sin6.sin6_addr))
-	SET_IN6_LINKLOCAL_IFINDEX (addr.sin6.sin6_addr, 0);
+        {
+          SET_IN6_LINKLOCAL_IFINDEX (addr.sin6.sin6_addr, 0);
+        }
 
       if (ifam->ifam_type == RTM_NEWADDR)
 	connected_add_ipv6 (ifp, flags, &addr.sin6.sin6_addr, 
@@ -963,7 +971,7 @@ rtm_read (struct rt_msghdr *rtm)
           || rtm->rtm_type == RTM_ADD
           || rtm->rtm_type == RTM_CHANGE)
         rib_add_ipv4 (ZEBRA_ROUTE_KERNEL, zebra_flags, &p, &gate.sin.sin_addr,
-                      NULL, 0, VRF_DEFAULT, 0, 0, 0, SAFI_UNICAST);
+                      NULL, 0, VRF_DEFAULT, 0, 0, 0, 0, SAFI_UNICAST);
       else
         rib_delete_ipv4 (ZEBRA_ROUTE_KERNEL, zebra_flags, &p,
                          &gate.sin.sin_addr, 0, VRF_DEFAULT, SAFI_UNICAST);
@@ -1005,7 +1013,7 @@ rtm_read (struct rt_msghdr *rtm)
           || rtm->rtm_type == RTM_ADD
           || rtm->rtm_type == RTM_CHANGE)
         rib_add_ipv6 (ZEBRA_ROUTE_KERNEL, zebra_flags, &p, &gate.sin6.sin6_addr,
-                      ifindex, VRF_DEFAULT, RT_TABLE_MAIN, 0, 0, SAFI_UNICAST);
+                      ifindex, VRF_DEFAULT, RT_TABLE_MAIN, 0, 0, 0, SAFI_UNICAST);
       else
         rib_delete_ipv6 (ZEBRA_ROUTE_KERNEL, zebra_flags, &p,
                          &gate.sin6.sin6_addr, ifindex,
@@ -1152,7 +1160,8 @@ rtmsg_debug (struct rt_msghdr *rtm)
   zlog_debug ("Kernel: Len: %d Type: %s", rtm->rtm_msglen, lookup (rtm_type_str, rtm->rtm_type));
   rtm_flag_dump (rtm->rtm_flags);
   zlog_debug ("Kernel: message seq %d", rtm->rtm_seq);
-  zlog_debug ("Kernel: pid %d, rtm_addrs 0x%x", rtm->rtm_pid, rtm->rtm_addrs);
+  zlog_debug ("Kernel: pid %lld, rtm_addrs 0x%x",
+              (long long)rtm->rtm_pid, rtm->rtm_addrs);
 }
 
 /* This is pretty gross, better suggestions welcome -- mhandler */

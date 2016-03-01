@@ -147,6 +147,10 @@ struct ospf
 
 #define OSPF_STUB_MAX_METRIC_SUMMARY_COST	0x00ff0000
 
+  /* LSA timers */
+  unsigned int min_ls_interval; /* minimum delay between LSAs (in msec) */
+  unsigned int min_ls_arrival; /* minimum interarrival time between LSAs (in msec) */
+
   /* SPF parameters */
   unsigned int spf_delay;		/* SPF delay time. */
   unsigned int spf_holdtime;		/* SPF hold time. */
@@ -558,6 +562,9 @@ extern struct ospf_area *ospf_area_lookup_by_area_id (struct ospf *,
 						      struct in_addr);
 extern void ospf_area_add_if (struct ospf_area *, struct ospf_interface *);
 extern void ospf_area_del_if (struct ospf_area *, struct ospf_interface *);
+
+extern void ospf_interface_area_set (struct interface *);
+extern void ospf_interface_area_unset (struct interface *);
 
 extern void ospf_route_map_init (void);
 extern void ospf_snmp_init (void);

@@ -207,7 +207,7 @@ bgp_accept (struct thread *thread)
       zlog_err ("accept_sock is nevative value %d", accept_sock);
       return -1;
     }
-  listener->thread = thread_add_read (master, bgp_accept, listener, accept_sock);
+  listener->thread = thread_add_read (bm->master, bgp_accept, listener, accept_sock);
 
   /* Accept client connection. */
   bgp_sock = sockunion_accept (accept_sock, &su);
@@ -276,6 +276,7 @@ bgp_bind (struct peer *peer)
 #ifdef SO_BINDTODEVICE
   int ret;
   struct ifreq ifreq;
+  int myerrno;
 
   if (! peer->ifname)
     return 0;
@@ -287,13 +288,15 @@ bgp_bind (struct peer *peer)
   
   ret = setsockopt (peer->fd, SOL_SOCKET, SO_BINDTODEVICE, 
 		    &ifreq, sizeof (ifreq));
-
+  myerrno = errno;
+  
   if (bgpd_privs.change (ZPRIVS_LOWER) )
     zlog_err ("bgp_bind: could not lower privs");
 
   if (ret < 0)
     {
-      zlog (peer->log, LOG_INFO, "bind to interface %s failed", peer->ifname);
+      zlog (peer->log, LOG_INFO, "bind to interface %s failed, errno=%d",
+            peer->ifname, myerrno);
       return ret;
     }
 #endif /* SO_BINDTODEVICE */
@@ -480,7 +483,7 @@ bgp_listener (int sock, struct sockaddr *sa, socklen_t salen)
   listener = XMALLOC (MTYPE_BGP_LISTENER, sizeof(*listener));
   listener->fd = sock;
   memcpy(&listener->su, sa, salen);
-  listener->thread = thread_add_read (master, bgp_accept, listener, sock);
+  listener->thread = thread_add_read (bm->master, bgp_accept, listener, sock);
   listnode_add (bm->listen_sockets, listener);
 
   return 0;

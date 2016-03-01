@@ -295,9 +295,7 @@ ospf_if_cleanup (struct ospf_interface *oi)
   ospf_ls_upd_queue_empty (oi);
   
   /* Reset pseudo neighbor. */
-  ospf_nbr_delete (oi->nbr_self);
-  oi->nbr_self = ospf_nbr_new (oi);
-  ospf_nbr_add_self (oi);
+  ospf_nbr_self_reset (oi);
 }
 
 void
@@ -1013,7 +1011,7 @@ ospf_vl_set_params (struct ospf_vl_data *vl_data, struct vertex *v)
   struct ospf_interface *voi;
   struct listnode *node;
   struct vertex_parent *vp = NULL;
-  int i;
+  unsigned int i;
   struct router_lsa *rl;
 
   voi = vl_data->vl_oi;

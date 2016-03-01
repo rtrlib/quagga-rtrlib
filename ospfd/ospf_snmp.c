@@ -213,7 +213,7 @@ oid ospf_oid [] = { OSPF2MIB };
 oid ospf_trap_oid [] = { OSPF2MIB, 16, 2 }; /* Not reverse mappable! */
 
 /* IP address 0.0.0.0. */
-static struct in_addr ospf_empty_addr = {0};
+static struct in_addr ospf_empty_addr = { .s_addr = 0 };
 
 /* Hook functions. */
 static u_char *ospfGeneralGroup (struct variable *, oid *, size_t *,
@@ -1927,6 +1927,9 @@ ospf_snmp_vl_add (struct ospf_vl_data *vl_data)
   lp.adv_router = vl_data->vl_peer;
 
   rn = route_node_get (ospf_snmp_vl_table, (struct prefix *) &lp);
+  if (rn->info)
+    route_unlock_node (rn);
+
   rn->info = vl_data;
 }
 

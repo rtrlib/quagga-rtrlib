@@ -20,8 +20,8 @@
  * 02111-1307, USA.  
  */
 
-#include <stddef.h>
 #include <zebra.h>
+#include <stddef.h>
 
 #include "stream.h"
 #include "memory.h"
@@ -60,7 +60,7 @@
 
 #define STREAM_VERIFY_SANE(S) \
   do { \
-    if ( !(GETP_VALID(S, (S)->getp)) && ENDP_VALID(S, (S)->endp) ) \
+    if ( !(GETP_VALID(S, (S)->getp) && ENDP_VALID(S, (S)->endp)) ) \
       STREAM_WARN_OFFSETS(S); \
     assert ( GETP_VALID(S, (S)->getp) ); \
     assert ( ENDP_VALID(S, (S)->endp) ); \

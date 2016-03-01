@@ -251,14 +251,6 @@ vtysh_client_execute (struct vtysh_client *vclient, const char *line, FILE *fp)
     }
 }
 
-static void
-vtysh_exit_ripd_only (void)
-{
-  if (ripd_client)
-    vtysh_client_execute (ripd_client, "exit", stdout);
-}
-
-
 void
 vtysh_pager_init (void)
 {
@@ -457,53 +449,11 @@ int
 vtysh_config_from_file (struct vty *vty, FILE *fp)
 {
   int ret;
-  vector vline;
   struct cmd_element *cmd;
 
   while (fgets (vty->buf, VTY_BUFSIZ, fp))
     {
-      if (vty->buf[0] == '!' || vty->buf[1] == '#')
-	continue;
-
-      vline = cmd_make_strvec (vty->buf);
-
-      /* In case of comment line. */
-      if (vline == NULL)
-	continue;
-
-      /* Execute configuration command : this is strict match. */
-      ret = cmd_execute_command_strict (vline, vty, &cmd);
-
-      /* Try again with setting node to CONFIG_NODE. */
-      if (ret != CMD_SUCCESS 
-	  && ret != CMD_SUCCESS_DAEMON
-	  && ret != CMD_WARNING)
-	{
-	  if (vty->node == KEYCHAIN_KEY_NODE)
-	    {
-	      vty->node = KEYCHAIN_NODE;
-	      vtysh_exit_ripd_only ();
-	      ret = cmd_execute_command_strict (vline, vty, &cmd);
-
-	      if (ret != CMD_SUCCESS 
-		  && ret != CMD_SUCCESS_DAEMON 
-		  && ret != CMD_WARNING)
-		{
-		  vtysh_exit_ripd_only ();
-		  vty->node = CONFIG_NODE;
-		  ret = cmd_execute_command_strict (vline, vty, &cmd);
-		}
-	    }
-	  else
-	    {
-	      vtysh_execute ("end");
-	      vtysh_execute ("configure terminal");
-	      vty->node = CONFIG_NODE;
-	      ret = cmd_execute_command_strict (vline, vty, &cmd);
-	    }
-	}	  
-
-      cmd_free_strvec (vline);
+      ret = command_config_read_one_line (vty, &cmd, 1);
 
       switch (ret)
 	{
@@ -1382,6 +1332,52 @@ ALIAS (vtysh_exit_interface,
        "quit",
        "Exit current mode and down to previous mode\n")
 
+DEFUN (vtysh_show_thread,
+       vtysh_show_thread_cmd,
+       "show thread cpu [FILTER]",
+      SHOW_STR
+      "Thread information\n"
+      "Thread CPU usage\n"
+      "Display filter (rwtexb)\n")
+{
+  unsigned int i;
+  int ret = CMD_SUCCESS;
+  char line[100];
+
+  sprintf(line, "show thread cpu %s\n", (argc == 1) ? argv[0] : "");
+  for (i = 0; i < array_size(vtysh_client); i++)
+    if ( vtysh_client[i].fd >= 0 )
+      {
+        fprintf (stdout, "Thread statistics for %s:\n",
+                 vtysh_client[i].name);
+        ret = vtysh_client_execute (&vtysh_client[i], line, stdout);
+        fprintf (stdout,"\n");
+      }
+  return ret;
+}
+
+DEFUN (vtysh_show_work_queues,
+       vtysh_show_work_queues_cmd,
+       "show work-queues",
+       SHOW_STR
+       "Work Queue information\n")
+{
+  unsigned int i;
+  int ret = CMD_SUCCESS;
+  char line[] = "show work-queues\n";
+
+  for (i = 0; i < array_size(vtysh_client); i++)
+    if ( vtysh_client[i].fd >= 0 )
+      {
+        fprintf (stdout, "Work queue statistics for %s:\n",
+                 vtysh_client[i].name);
+        ret = vtysh_client_execute (&vtysh_client[i], line, stdout);
+        fprintf (stdout,"\n");
+      }
+
+  return ret;
+}
+
 /* Memory */
 DEFUN (vtysh_show_memory,
        vtysh_show_memory_cmd,
@@ -1795,6 +1791,34 @@ DEFUN (vtysh_write_terminal,
   return CMD_SUCCESS;
 }
 
+DEFUN (vtysh_write_terminal_daemon,
+       vtysh_write_terminal_daemon_cmd,
+       "write terminal (zebra|ripd|ripngd|ospfd|ospf6d|bgpd|isisd|babeld)",
+       "Write running configuration to memory, network, or terminal\n"
+       "Write to terminal\n"
+       "For the zebra daemon\n"
+       "For the rip daemon\n"
+       "For the ripng daemon\n"
+       "For the ospf daemon\n"
+       "For the ospfv6 daemon\n"
+       "For the bgp daemon\n"
+       "For the isis daemon\n"
+       "For the babel daemon\n")
+{
+  unsigned int i;
+  int ret = CMD_SUCCESS;
+
+  for (i = 0; i < array_size(vtysh_client); i++)
+    {
+      if (strcmp(vtysh_client[i].name, argv[0]) == 0)
+	break;
+    }
+
+  ret = vtysh_client_execute(&vtysh_client[i], "show running-config\n", stdout);
+
+  return ret;
+}
+
 DEFUN (vtysh_integrated_config,
        vtysh_integrated_config_cmd,
        "service integrated-vtysh-config",
@@ -1912,6 +1936,20 @@ ALIAS (vtysh_write_terminal,
        "show running-config",
        SHOW_STR
        "Current operating configuration\n")
+
+ALIAS (vtysh_write_terminal_daemon,
+       vtysh_show_running_config_daemon_cmd,
+       "show running-config (zebra|ripd|ripngd|ospfd|ospf6d|bgpd|isisd|babeld)",
+       SHOW_STR
+       "Current operating configuration\n"
+       "For the zebra daemon\n"
+       "For the rip daemon\n"
+       "For the ripng daemon\n"
+       "For the ospf daemon\n"
+       "For the ospfv6 daemon\n"
+       "For the bgp daemon\n"
+       "For the isis daemon\n"
+       "For the babel daemon\n")
 
 DEFUN (vtysh_terminal_length,
        vtysh_terminal_length_cmd,
@@ -2440,12 +2478,14 @@ vtysh_init_vty (void)
   install_element (CONFIG_NODE, &vtysh_interface_vrf_cmd);
   install_element (CONFIG_NODE, &vtysh_no_interface_vrf_cmd);
   install_element (ENABLE_NODE, &vtysh_show_running_config_cmd);
+  install_element (ENABLE_NODE, &vtysh_show_running_config_daemon_cmd);
   install_element (ENABLE_NODE, &vtysh_copy_runningconfig_startupconfig_cmd);
   install_element (ENABLE_NODE, &vtysh_write_file_cmd);
   install_element (ENABLE_NODE, &vtysh_write_cmd);
 
   /* "write terminal" command. */
   install_element (ENABLE_NODE, &vtysh_write_terminal_cmd);
+  install_element (ENABLE_NODE, &vtysh_write_terminal_daemon_cmd);
  
   install_element (CONFIG_NODE, &vtysh_integrated_config_cmd);
   install_element (CONFIG_NODE, &no_vtysh_integrated_config_cmd);
@@ -2488,6 +2528,12 @@ vtysh_init_vty (void)
   
   install_element (VIEW_NODE, &vtysh_show_memory_cmd);
   install_element (ENABLE_NODE, &vtysh_show_memory_cmd);
+
+  install_element (VIEW_NODE, &vtysh_show_work_queues_cmd);
+  install_element (ENABLE_NODE, &vtysh_show_work_queues_cmd);
+
+  install_element (VIEW_NODE, &vtysh_show_thread_cmd);
+  install_element (ENABLE_NODE, &vtysh_show_thread_cmd);
 
   /* Logging */
   install_element (ENABLE_NODE, &vtysh_show_logging_cmd);

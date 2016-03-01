@@ -144,6 +144,7 @@ if test "x${cflags_specified}" = "x" ; then
         AC_C_FLAG([-Os], [
           AC_C_FLAG([-O2])
         ])
+        AC_C_FLAG([-fpie])
         AC_C_FLAG([-fno-omit-frame-pointer])
         AC_C_FLAG([-Wall])
         AC_C_FLAG([-Wextra])
@@ -212,7 +213,7 @@ AC_GNU_SOURCE
 dnl -------
 dnl libtool
 dnl -------
-AC_PROG_LIBTOOL
+LT_INIT
 
 dnl ----------------------
 dnl Packages configuration
@@ -224,7 +225,7 @@ AC_ARG_WITH(pkg-git-version,
 	AS_HELP_STRING([--with-pkg-git-version], [add git information to MOTD and build version string]),
 	[ test "x$withval" != "xno" && with_pkg_git_version="yes" ])
 AC_ARG_ENABLE(vtysh,
-  AS_HELP_STRING([--enable-vtysh], [include integrated vty shell for Quagga]))
+  AS_HELP_STRING([--disable-vtysh], [do not build integrated vty shell for Quagga]))
 AC_ARG_ENABLE(doc,
   AS_HELP_STRING([--disable-doc], [do not build docs]))
 AC_ARG_ENABLE(zebra,
@@ -244,7 +245,7 @@ AC_ARG_ENABLE(watchquagga,
 AC_ARG_ENABLE(isisd,
   AS_HELP_STRING([--disable-isisd], [do not build isisd]))
 AC_ARG_ENABLE(pimd,
-  AS_HELP_STRING([--enable-pimd], [build pimd]))
+  AS_HELP_STRING([--disable-pimd], [do not build pimd]))
 AC_ARG_ENABLE(bgp-announce,
   AS_HELP_STRING([--disable-bgp-announce,], [turn off BGP route announcement]))
 AC_ARG_ENABLE(snmp,
@@ -438,6 +439,7 @@ AC_C_VOLATILE
 AC_HEADER_STDC
 AC_HEADER_TIME
 AC_HEADER_SYS_WAIT
+AC_HEADER_STDBOOL
 dnl AC_TYPE_PID_T
 AC_TYPE_UID_T
 AC_TYPE_MODE_T
@@ -638,7 +640,8 @@ dnl ---------------------
 dnl Integrated VTY option
 dnl ---------------------
 case "${enable_vtysh}" in
-  "yes") VTYSH="vtysh";
+  "no") VTYSH="";;
+  *)    VTYSH="vtysh";
          AC_DEFINE(VTYSH,,VTY shell)
 dnl	 Vtysh uses libreadline, which looks for termcap functions at
 dnl	 configure time.  We follow readlines search order.
@@ -668,7 +671,6 @@ dnl	 [TODO] on Linux, and in [TODO] on Solaris.
 	 fi
 	 ;;
   "no" ) VTYSH="";;
-  *    ) ;;
 esac
 AC_SUBST(LIBREADLINE)
 AM_CONDITIONAL(VTYSH, test "x$VTYSH" = "xvtysh")
@@ -793,7 +795,7 @@ AC_CHECK_FUNCS([dup2 ftruncate getcwd gethostbyname getpagesize gettimeofday \
 	strtol strtoul strlcat strlcpy \
 	daemon snprintf vsnprintf \
 	if_nametoindex if_indextoname getifaddrs \
-	uname fcntl])
+	uname fcntl getgrouplist])
 
 AC_CHECK_FUNCS(setproctitle, ,
   [AC_CHECK_LIB(util, setproctitle, 
@@ -953,6 +955,11 @@ dnl figure out how to specify an interface in multicast sockets API
 dnl ---------------------------------------------------------------
 AC_CHECK_MEMBERS([struct ip_mreqn.imr_ifindex], [], [], QUAGGA_INCLUDES)
 
+AC_CHECK_HEADERS([linux/mroute.h], [], [],
+[
+#if HAVE_NETINET_IN_H
+#include<netinet/in.h>
+#endif])
 AC_MSG_CHECKING([for BSD struct ip_mreq hack])
 AC_TRY_COMPILE([#ifdef HAVE_SYS_PARAM_H
 #include <sys/param.h>
@@ -1182,9 +1189,8 @@ esac
 AM_CONDITIONAL(ISISD, test "x$ISISD" = "xisisd")
 
 case "${enable_pimd}" in
-  "yes") PIMD="pimd";;
   "no" ) PIMD="";;
-  *    ) ;;
+  *    ) PIMD="pimd";;
 esac
 AM_CONDITIONAL(PIMD, test "x$PIMD" = "xpimd")
 
@@ -1462,29 +1468,6 @@ dnl configure date
 dnl ----------
 CONFDATE=`date '+%Y%m%d'`
 AC_SUBST(CONFDATE)
-
-dnl Conditionally enable PIE support for GNU toolchains.
-AC_ARG_ENABLE(pie, AS_HELP_STRING([--disable-pie], [Do not build tools as a Position Independent Executables]))
-if test "$enable_pie" != "no"; then
-  AC_CACHE_CHECK([whether $CC accepts PIE flags], [ap_cv_cc_pie], [
-    save_CFLAGS=$CFLAGS
-    save_LDFLAGS=$LDFLAGS
-    CFLAGS="$CFLAGS -fPIE"
-    LDFLAGS="$LDFLAGS -pie"
-    AC_LINK_IFELSE([AC_LANG_SOURCE([[static int foo[30000]; int main () { return 0; }]])],
-      [ap_cv_cc_pie=yes], [ap_cv_cc_pie=no]
-    )
-    CFLAGS=$save_CFLAGS
-    LDFLAGS=$save_LDFLAGS
-  ])
-  if test "$ap_cv_cc_pie" = "yes"; then
-    PICFLAGS="-fPIE"
-    PILDFLAGS="-pie"
-  fi
-fi
-
-AC_SUBST(PICFLAGS)
-AC_SUBST(PILDFLAGS)
 
 dnl -------
 dnl DejaGNU

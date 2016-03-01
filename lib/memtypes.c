@@ -82,8 +82,7 @@ struct memory_list memory_list_zebra[] =
   { MTYPE_NEXTHOP,		"Nexthop"			},
   { MTYPE_RIB,			"RIB"				},
   { MTYPE_RIB_QUEUE,		"RIB process work queue"	},
-  { MTYPE_STATIC_IPV4,		"Static IPv4 route"		},
-  { MTYPE_STATIC_IPV6,		"Static IPv6 route"		},
+  { MTYPE_STATIC_ROUTE,		"Static route"			},
   { MTYPE_RIB_DEST,		"RIB destination"		},
   { MTYPE_RIB_TABLE_INFO,	"RIB table info"		},
   { MTYPE_NETLINK_NAME,	"Netlink name"			},
@@ -272,6 +271,7 @@ struct memory_list memory_list_pim[] =
   { MTYPE_PIM_IFCHANNEL,         "PIM interface (S,G) state"      },
   { MTYPE_PIM_UPSTREAM,          "PIM upstream (S,G) state"       },
   { MTYPE_PIM_SSMPINGD,          "PIM sspimgd socket"             },
+  { MTYPE_PIM_STATIC_ROUTE,      "PIM Static Route"               },
   { -1, NULL },
 };
 

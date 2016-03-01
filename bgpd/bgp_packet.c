@@ -275,7 +275,6 @@ static struct stream *
 bgp_update_packet_eor (struct peer *peer, afi_t afi, safi_t safi)
 {
   struct stream *s;
-  struct stream *packet;
 
   if (DISABLE_BGP_ANNOUNCE)
     return NULL;
@@ -308,10 +307,8 @@ bgp_update_packet_eor (struct peer *peer, afi_t afi, safi_t safi)
     }
 
   bgp_packet_set_size (s);
-  packet = stream_dup (s);
-  bgp_packet_add (peer, packet);
-  stream_free (s);
-  return packet;
+  bgp_packet_add (peer, s);
+  return s;
 }
 
 /* Make BGP withdraw packet.  */
@@ -431,7 +428,6 @@ bgp_default_update_send (struct peer *peer, struct attr *attr,
 			 afi_t afi, safi_t safi, struct peer *from)
 {
   struct stream *s;
-  struct stream *packet;
   struct prefix p;
   unsigned long pos;
   bgp_size_t total_attr_len;
@@ -482,16 +478,13 @@ bgp_default_update_send (struct peer *peer, struct attr *attr,
   /* Set size. */
   bgp_packet_set_size (s);
 
-  packet = stream_dup (s);
-  stream_free (s);
-
   /* Dump packet if debug option is set. */
 #ifdef DEBUG
   /* bgp_packet_dump (packet); */
 #endif /* DEBUG */
 
   /* Add packet to the peer. */
-  bgp_packet_add (peer, packet);
+  bgp_packet_add (peer, s);
 
   BGP_WRITE_ON (peer->t_write, bgp_write, peer->fd);
 }
@@ -500,7 +493,6 @@ void
 bgp_default_withdraw_send (struct peer *peer, afi_t afi, safi_t safi)
 {
   struct stream *s;
-  struct stream *packet;
   struct prefix p;
   unsigned long attrlen_pos = 0;
   unsigned long cp;
@@ -570,11 +562,8 @@ bgp_default_withdraw_send (struct peer *peer, afi_t afi, safi_t safi)
 
   bgp_packet_set_size (s);
 
-  packet = stream_dup (s);
-  stream_free (s);
-
   /* Add packet to the peer. */
-  bgp_packet_add (peer, packet);
+  bgp_packet_add (peer, s);
 
   BGP_WRITE_ON (peer->t_write, bgp_write, peer->fd);
 }
@@ -978,8 +967,13 @@ bgp_notify_send_with_data (struct peer *peer, u_char code, u_char sub_code,
 	    }
       }
     bgp_notify_print (peer, &bgp_notify, "sending");
+
     if (bgp_notify.data)
-      XFREE (MTYPE_TMP, bgp_notify.data);
+      {
+        XFREE (MTYPE_TMP, bgp_notify.data);
+        bgp_notify.data = NULL;
+        bgp_notify.length = 0;
+      }
   }
 
   if (BGP_DEBUG (normal, NORMAL))
@@ -1029,7 +1023,6 @@ bgp_route_refresh_send (struct peer *peer, afi_t afi, safi_t safi,
 			u_char orf_type, u_char when_to_refresh, int remove)
 {
   struct stream *s;
-  struct stream *packet;
   int length;
   struct bgp_filter *filter;
   int orf_refresh = 0;
@@ -1110,12 +1103,8 @@ bgp_route_refresh_send (struct peer *peer, afi_t afi, safi_t safi,
 		 BGP_MSG_ROUTE_REFRESH_NEW : BGP_MSG_ROUTE_REFRESH_OLD, length);
     }
 
-  /* Make real packet. */
-  packet = stream_dup (s);
-  stream_free (s);
-
   /* Add packet to the peer. */
-  bgp_packet_add (peer, packet);
+  bgp_packet_add (peer, s);
 
   BGP_WRITE_ON (peer->t_write, bgp_write, peer->fd);
 }
@@ -1126,7 +1115,6 @@ bgp_capability_send (struct peer *peer, afi_t afi, safi_t safi,
 		     int capability_code, int action)
 {
   struct stream *s;
-  struct stream *packet;
   int length;
 
   /* Adjust safi code. */
@@ -1157,12 +1145,9 @@ bgp_capability_send (struct peer *peer, afi_t afi, safi_t safi,
   /* Set packet size. */
   length = bgp_packet_set_size (s);
 
-  /* Make real packet. */
-  packet = stream_dup (s);
-  stream_free (s);
 
   /* Add packet to the peer. */
-  bgp_packet_add (peer, packet);
+  bgp_packet_add (peer, s);
 
   if (BGP_DEBUG (normal, NORMAL))
     zlog_debug ("%s send message type %d, length (incl. header) %d",
@@ -1587,6 +1572,7 @@ bgp_open_receive (struct peer *peer, bgp_size_t size)
 
   /* Get sockname. */
   bgp_getsockname (peer);
+  peer->rtt = sockopt_tcp_rtt (peer->fd);
 
   BGP_EVENT_ADD (peer, Receive_OPEN_message);
 
@@ -1993,7 +1979,11 @@ bgp_notify_receive (struct peer *peer, bgp_size_t size)
 
     bgp_notify_print(peer, &bgp_notify, "received");
     if (bgp_notify.data)
-      XFREE (MTYPE_TMP, bgp_notify.data);
+      {
+        XFREE (MTYPE_TMP, bgp_notify.data);
+        bgp_notify.data = NULL;
+        bgp_notify.length = 0;
+      }
   }
 
   /* peer count update */
@@ -2593,7 +2583,6 @@ bgp_read (struct thread *thread)
     {
     case BGP_MSG_OPEN:
       peer->open_in++;
-      peer->rtt = sockopt_tcp_rtt(peer->fd);
       bgp_open_receive (peer, size); /* XXX return value ignored! */
       break;
     case BGP_MSG_UPDATE:

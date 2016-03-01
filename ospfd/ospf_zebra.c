@@ -312,6 +312,7 @@ ospf_interface_address_delete (int command, struct zclient *zclient,
 
   assert (rn->info);
   oi = rn->info;
+  route_unlock_node (rn);
 
   /* Call interface hook functions to clean up */
   ospf_if_free (oi);
@@ -1006,8 +1007,6 @@ ospf_distribute_list_update_timer (struct thread *thread)
   return 0;
 }
 
-#define OSPF_DISTRIBUTE_UPDATE_DELAY 5
-
 /* Update distribute-list and set timer to apply access-list. */
 void
 ospf_distribute_list_update (struct ospf *ospf, uintptr_t type)
@@ -1024,8 +1023,8 @@ ospf_distribute_list_update (struct ospf *ospf, uintptr_t type)
 
   /* Set timer. */
   ospf->t_distribute_update =
-    thread_add_timer (master, ospf_distribute_list_update_timer,
-                      (void *) type, OSPF_DISTRIBUTE_UPDATE_DELAY);
+    thread_add_timer_msec (master, ospf_distribute_list_update_timer,
+                      (void *) type, ospf->min_ls_interval);
 }
 
 /* If access-list is updated, apply some check. */
@@ -1305,10 +1304,10 @@ ospf_zebra_connected (struct zclient *zclient)
 }
 
 void
-ospf_zebra_init ()
+ospf_zebra_init (struct thread_master *master)
 {
   /* Allocate zebra structure. */
-  zclient = zclient_new ();
+  zclient = zclient_new (master);
   zclient_init (zclient, ZEBRA_ROUTE_OSPF);
   zclient->zebra_connected = ospf_zebra_connected;
   zclient->router_id_update = ospf_router_id_update_zebra;

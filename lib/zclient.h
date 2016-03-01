@@ -40,6 +40,9 @@
 /* Structure for the zebra client. */
 struct zclient
 {
+  /* The thread master we schedule ourselves on */
+  struct thread_master *master;
+
   /* Socket to zebra daemon. */
   int sock;
 
@@ -93,6 +96,7 @@ struct zclient
 #define ZAPI_MESSAGE_IFINDEX  0x02
 #define ZAPI_MESSAGE_DISTANCE 0x04
 #define ZAPI_MESSAGE_METRIC   0x08
+#define ZAPI_MESSAGE_MTU      0x10
 
 /* Zserv protocol message header */
 struct zserv_header
@@ -128,11 +132,13 @@ struct zapi_ipv4
 
   u_int32_t metric;
 
+  u_int32_t mtu;
+
   vrf_id_t vrf_id;
 };
 
 /* Prototypes of zebra client service functions. */
-extern struct zclient *zclient_new (void);
+extern struct zclient *zclient_new (struct thread_master *);
 extern void zclient_init (struct zclient *, int);
 extern int zclient_start (struct zclient *);
 extern void zclient_stop (struct zclient *);
@@ -163,6 +169,9 @@ extern int zclient_send_message(struct zclient *);
 
 /* create header for command, length to be filled in by user later */
 extern void zclient_create_header (struct stream *, uint16_t, vrf_id_t);
+extern int zclient_read_header (struct stream *s, int sock, u_int16_t *size,
+				u_char *marker, u_char *version,
+				u_int16_t *vrf_id, u_int16_t *cmd);
 
 extern struct interface *zebra_interface_add_read (struct stream *,
     vrf_id_t);
@@ -197,6 +206,8 @@ struct zapi_ipv6
   u_char distance;
 
   u_int32_t metric;
+
+  u_int32_t mtu;
 
   vrf_id_t vrf_id;
 };

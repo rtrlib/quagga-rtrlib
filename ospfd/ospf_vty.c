@@ -292,6 +292,41 @@ ospf_passive_interface_update (struct ospf *ospf, struct interface *ifp,
     }
 }
 
+/* get the appropriate ospf parameters structure, checking if
+ * there's a valid interface address at the argi'th argv index
+ */
+enum {
+  VTY_SET = 0,
+  VTY_UNSET,
+};
+#define OSPF_VTY_GET_IF_PARAMS(ifp,params,argi,addr,set) \
+  (params) = IF_DEF_PARAMS ((ifp));           \
+                                              \
+  if (argc == (argi) + 1)                     \
+    {                                         \
+      int ret = inet_aton(argv[(argi)], &(addr)); \
+      if (!ret)                               \
+	{                                     \
+	  vty_out (vty, "Please specify interface address by A.B.C.D%s", \
+		   VTY_NEWLINE);              \
+	  return CMD_WARNING;                 \
+	}                                     \
+      (params) = ospf_get_if_params ((ifp), (addr)); \
+                                              \
+      if (set)                                \
+        ospf_if_update_params ((ifp), (addr));  \
+      else if ((params) == NULL)              \
+        return CMD_SUCCESS;                   \
+    }
+
+#define OSPF_VTY_PARAM_UNSET(params,var,ifp,addr) \
+  UNSET_IF_PARAM ((params), var);               \
+    if ((params) != IF_DEF_PARAMS ((ifp)))        \
+    {                                             \
+      ospf_free_if_params ((ifp), (addr));        \
+      ospf_if_update_params ((ifp), (addr));      \
+    }
+
 DEFUN (ospf_passive_interface,
        ospf_passive_interface_addr_cmd,
        "passive-interface IFNAME A.B.C.D",
@@ -453,7 +488,7 @@ DEFUN (ospf_network_area,
        "OSPF area ID in IP address format\n"
        "OSPF area ID as a decimal value\n")
 {
-  struct ospf *ospf= vty->index;
+  struct ospf *ospf = vty->index;
   struct prefix_ipv4 p;
   struct in_addr area_id;
   int ret, format;
@@ -2233,6 +2268,83 @@ ospf_timers_spf_set (struct vty *vty, unsigned int delay,
   return CMD_SUCCESS;
 }
 
+DEFUN (ospf_timers_min_ls_interval,
+       ospf_timers_min_ls_interval_cmd,
+       "timers throttle lsa all <0-5000>",
+       "Adjust routing timers\n"
+       "Throttling adaptive timer\n"
+       "LSA delay between transmissions\n"
+       NO_STR
+       "Delay (msec) between sending LSAs\n")
+{
+  struct ospf *ospf = vty->index;
+  unsigned int interval;
+
+  if (argc != 1)
+    {
+      vty_out (vty, "Insufficient arguments%s", VTY_NEWLINE);
+      return CMD_WARNING;
+    }
+
+  VTY_GET_INTEGER ("LSA interval", interval, argv[0]);
+
+  ospf->min_ls_interval = interval;
+
+  return CMD_SUCCESS;
+}
+
+DEFUN (no_ospf_timers_min_ls_interval,
+       no_ospf_timers_min_ls_interval_cmd,
+       "no timers throttle lsa all",
+       NO_STR
+       "Adjust routing timers\n"
+       "Throttling adaptive timer\n"
+       "LSA delay between transmissions\n")
+{
+  struct ospf *ospf = vty->index;
+  ospf->min_ls_interval = OSPF_MIN_LS_INTERVAL;
+
+  return CMD_SUCCESS;
+}
+
+DEFUN (ospf_timers_min_ls_arrival,
+       ospf_timers_min_ls_arrival_cmd,
+       "timers lsa arrival <0-1000>",
+       "Adjust routing timers\n"
+       "Throttling link state advertisement delays\n"
+       "OSPF minimum arrival interval delay\n"
+       "Delay (msec) between accepted LSAs\n")
+{
+  struct ospf *ospf = vty->index;
+  unsigned int arrival;
+
+  if (argc != 1)
+    {
+      vty_out (vty, "Insufficient arguments%s", VTY_NEWLINE);
+      return CMD_WARNING;
+    }
+
+  VTY_GET_INTEGER_RANGE ("minimum LSA inter-arrival time", arrival, argv[0], 0, 1000);
+
+  ospf->min_ls_arrival = arrival;
+
+  return CMD_SUCCESS;
+}
+
+DEFUN (no_ospf_timers_min_ls_arrival,
+       no_ospf_timers_min_ls_arrival_cmd,
+       "no timers lsa arrival",
+       NO_STR
+       "Adjust routing timers\n"
+       "Throttling link state advertisement delays\n"
+       "OSPF minimum arrival interval delay\n")
+{
+  struct ospf *ospf = vty->index;
+  ospf->min_ls_arrival = OSPF_MIN_LS_ARRIVAL;
+
+  return CMD_SUCCESS;
+}
+
 DEFUN (ospf_timers_throttle_spf,
        ospf_timers_throttle_spf_cmd,
        "timers throttle spf <0-600000> <0-600000> <0-600000>",
@@ -3617,7 +3729,8 @@ static void
 show_ip_ospf_database_router_links (struct vty *vty,
                                     struct router_lsa *rl)
 {
-  int len, i, type;
+  int len, type;
+  unsigned int i;
 
   len = ntohs (rl->header.length) - 4;
   for (i = 0; i < ntohs (rl->links) && len > 0; len -= 12, i++)
@@ -5805,6 +5918,70 @@ ALIAS (no_ip_ospf_transmit_delay,
        "OSPF interface commands\n"
        "Link state transmit delay\n")
 
+DEFUN (ip_ospf_area,
+       ip_ospf_area_cmd,
+       "ip ospf area (A.B.C.D|<0-4294967295>) [A.B.C.D]",
+       "IP Information\n"
+       "OSPF interface commands\n"
+       "Enable OSPF on this interface\n"
+       "OSPF area ID in IP address format\n"
+       "OSPF area ID as a decimal value\n"
+       "Address of interface\n")
+{
+  struct interface *ifp = vty->index;
+  struct in_addr area_id;
+  struct in_addr addr;
+  int format;
+  struct ospf_if_params *params;
+
+  VTY_GET_OSPF_AREA_ID (area_id, format, argv[0]);
+
+  OSPF_VTY_GET_IF_PARAMS(ifp, params, 1, addr, VTY_SET);
+  
+  if (OSPF_IF_PARAM_CONFIGURED(params, if_area))
+    {
+      vty_out (vty, "There is already an interface area statement.%s",
+              VTY_NEWLINE);
+      return CMD_WARNING;
+    }
+  if (memcmp (ifp->name, "VLINK", 5) == 0)
+    {
+      vty_out (vty, "Cannot enable OSPF on a virtual link.%s", VTY_NEWLINE);
+      return CMD_WARNING;
+    }
+  
+  SET_IF_PARAM (params, if_area);
+  params->if_area = area_id;
+  ospf_interface_area_set (ifp);
+
+  return CMD_SUCCESS;
+}
+
+DEFUN (no_ip_ospf_area,
+       no_ip_ospf_area_cmd,
+       "no ip ospf area [A.B.C.D]",
+       NO_STR
+       "IP Information\n"
+       "OSPF interface commands\n"
+       "Disable OSPF on this interface\n"
+       "Address of interface\n")
+{
+  struct interface *ifp = vty->index;
+  struct ospf_if_params *params;
+  struct in_addr addr;
+
+  OSPF_VTY_GET_IF_PARAMS(ifp, params, 0, addr, VTY_UNSET);
+  
+  if (!OSPF_IF_PARAM_CONFIGURED(params, if_area))
+    return CMD_SUCCESS;
+  
+  OSPF_VTY_PARAM_UNSET(params, if_area, ifp, addr);
+  
+  ospf_interface_area_unset (ifp);
+
+  return CMD_SUCCESS;
+}
+
 DEFUN (ospf_redistribute_source,
        ospf_redistribute_source_cmd,
        "redistribute " QUAGGA_REDIST_STR_OSPFD
@@ -6869,6 +7046,15 @@ config_write_interface (struct vty *vty)
 	    vty_out (vty, "%s", VTY_NEWLINE);
 	  }
 
+	/* Area  print. */
+	if (OSPF_IF_PARAM_CONFIGURED (params, if_area))
+	  {
+	    vty_out (vty, " ip ospf area %s", inet_ntoa (params->if_area));
+	    if (params != IF_DEF_PARAMS (ifp))
+	      vty_out (vty, " %s", inet_ntoa (rn->p.u.prefix4));
+            vty_out (vty, "%s", VTY_NEWLINE);
+	  }
+
     /* MTU ignore print. */
     if (OSPF_IF_PARAM_CONFIGURED (params, mtu_ignore) &&
        params->mtu_ignore != OSPF_MTU_IGNORE_DEFAULT)
@@ -7289,6 +7475,14 @@ ospf_config_write (struct vty *vty)
 		   ospf->ref_bandwidth / 1000, VTY_NEWLINE);
         }
 
+      /* LSA timers */
+      if (ospf->min_ls_interval != OSPF_MIN_LS_INTERVAL)
+  vty_out (vty, " timers throttle lsa all %d%s",
+     ospf->min_ls_interval, VTY_NEWLINE);
+      if (ospf->min_ls_arrival != OSPF_MIN_LS_ARRIVAL)
+  vty_out (vty, " timers lsa arrival %d%s",
+     ospf->min_ls_arrival, VTY_NEWLINE);
+
       /* SPF timers print. */
       if (ospf->spf_delay != OSPF_SPF_DELAY_DEFAULT ||
 	  ospf->spf_holdtime != OSPF_SPF_HOLDTIME_DEFAULT ||
@@ -7511,6 +7705,10 @@ ospf_vty_if_init (void)
   install_element (INTERFACE_NODE, &no_ip_ospf_transmit_delay_addr_cmd);
   install_element (INTERFACE_NODE, &no_ip_ospf_transmit_delay_cmd);
 
+  /* "ip ospf area" commands. */
+  install_element (INTERFACE_NODE, &ip_ospf_area_cmd);
+  install_element (INTERFACE_NODE, &no_ip_ospf_area_cmd);
+
   /* These commands are compatibitliy for previous version. */
   install_element (INTERFACE_NODE, &ospf_authentication_key_cmd);
   install_element (INTERFACE_NODE, &no_ospf_authentication_key_cmd);
@@ -7700,6 +7898,12 @@ ospf_vty_init (void)
   install_element (OSPF_NODE, &ospf_area_import_list_cmd);
   install_element (OSPF_NODE, &no_ospf_area_import_list_cmd);
   
+  /* LSA timer commands */
+  install_element (OSPF_NODE, &ospf_timers_min_ls_interval_cmd);
+  install_element (OSPF_NODE, &no_ospf_timers_min_ls_interval_cmd);
+  install_element (OSPF_NODE, &ospf_timers_min_ls_arrival_cmd);
+  install_element (OSPF_NODE, &no_ospf_timers_min_ls_arrival_cmd);
+
   /* SPF timer commands */
   install_element (OSPF_NODE, &ospf_timers_spf_cmd);
   install_element (OSPF_NODE, &no_ospf_timers_spf_cmd);

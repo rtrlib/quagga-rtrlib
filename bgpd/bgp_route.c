@@ -72,7 +72,7 @@ Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 /* Extern from bgp_dump.c */
 extern const char *bgp_origin_str[];
 extern const char *bgp_origin_long_str[];
-
+
 static struct bgp_node *
 bgp_afi_node_get (struct bgp_table *table, afi_t afi, safi_t safi, struct prefix *p,
 		  struct prefix_rd *prd)
@@ -102,7 +102,7 @@ bgp_afi_node_get (struct bgp_table *table, afi_t afi, safi_t safi, struct prefix
 
   return rn;
 }
-
+
 /* Allocate bgp_info_extra */
 static struct bgp_info_extra *
 bgp_info_extra_new (void)
@@ -537,7 +537,11 @@ bgp_info_cmp (struct bgp *bgp, struct bgp_info *new, struct bgp_info *exist,
 	return 0;
     }
 
-  /* 11. Rourter-ID comparision. */
+  /* 11. Router-ID comparision. */
+  /* If one of the paths is "stale", the corresponding peer router-id will
+   * be 0 and would always win over the other path. If originator id is
+   * used for the comparision, it will decide which path is better.
+   */
   if (newattr->flag & ATTR_FLAG_BIT(BGP_ATTR_ORIGINATOR_ID))
     new_id.s_addr = newattre->originator_id.s_addr;
   else
@@ -566,6 +570,19 @@ bgp_info_cmp (struct bgp *bgp, struct bgp_info *new, struct bgp_info *exist,
     return 0;
 
   /* 13. Neighbor address comparision. */
+  /* Do this only if neither path is "stale" as stale paths do not have
+   * valid peer information (as the connection may or may not be up).
+   */
+  if (CHECK_FLAG (exist->flags, BGP_INFO_STALE))
+    return 1;
+  if (CHECK_FLAG (new->flags, BGP_INFO_STALE))
+    return 0;
+  /* locally configured routes to advertise do not have su_remote */
+  if (new->peer->su_remote == NULL)
+    return 0;
+  if (exist->peer->su_remote == NULL)
+    return 1;
+  
   ret = sockunion_cmp (new->peer->su_remote, exist->peer->su_remote);
 
   if (ret == 1)
@@ -1346,6 +1363,9 @@ bgp_best_selection (struct bgp *bgp, struct bgp_node *rn,
 	  continue;
 	if (BGP_INFO_HOLDDOWN (ri1))
 	  continue;
+        if (ri1->peer && ri1->peer != bgp->peer_self)
+          if (ri1->peer->status != Established)
+            continue;
 
 	new_select = ri1;
 	if (do_mpath)
@@ -1358,6 +1378,11 @@ bgp_best_selection (struct bgp *bgp, struct bgp_node *rn,
 		continue;
 	      if (BGP_INFO_HOLDDOWN (ri2))
 		continue;
+              if (ri2->peer &&
+                  ri2->peer != bgp->peer_self &&
+                  !CHECK_FLAG (ri2->peer->sflags, PEER_STATUS_NSF_WAIT))
+                if (ri2->peer->status != Established)
+                  continue;
 
 	      if (aspath_cmp_left (ri1->attr->aspath, ri2->attr->aspath)
 		  || aspath_cmp_left_confed (ri1->attr->aspath,
@@ -1408,6 +1433,12 @@ bgp_best_selection (struct bgp *bgp, struct bgp_node *rn,
           
           continue;
         }
+
+      if (ri->peer &&
+          ri->peer != bgp->peer_self &&
+          !CHECK_FLAG (ri->peer->sflags, PEER_STATUS_NSF_WAIT))
+        if (ri->peer->status != Established)
+          continue;
 
       if (bgp_flag_check (bgp, BGP_FLAG_DETERMINISTIC_MED)
           && (! CHECK_FLAG (ri->flags, BGP_INFO_DMED_SELECTED)))
@@ -2991,8 +3022,13 @@ bgp_clear_route (struct peer *peer, afi_t afi, safi_t safi,
    *    on the process_main queue. Fast-flapping could cause that queue
    *    to grow and grow.
    */
+
+  /* lock peer in assumption that clear-node-queue will get nodes; if so,
+   * the unlock will happen upon work-queue completion; other wise, the
+   * unlock happens at the end of this function.
+   */
   if (!peer->clear_node_queue->thread)
-    peer_lock (peer); /* bgp_clear_node_complete */
+    peer_lock (peer);
 
   switch (purpose)
     {
@@ -3019,28 +3055,11 @@ bgp_clear_route (struct peer *peer, afi_t afi, safi_t safi,
       assert (0);
       break;
     }
-  
-  /* If no routes were cleared, nothing was added to workqueue, the
-   * completion function won't be run by workqueue code - call it here. 
-   * XXX: Actually, this assumption doesn't hold, see
-   * bgp_clear_route_table(), we queue all non-empty nodes.
-   *
-   * Additionally, there is a presumption in FSM that clearing is only
-   * really needed if peer state is Established - peers in
-   * pre-Established states shouldn't have any route-update state
-   * associated with them (in or out).
-   *
-   * We still can get here in pre-Established though, through
-   * peer_delete -> bgp_fsm_change_status, so this is a useful sanity
-   * check to ensure the assumption above holds.
-   *
-   * At some future point, this check could be move to the top of the
-   * function, and do a quick early-return when state is
-   * pre-Established, avoiding above list and table scans. Once we're
-   * sure it is safe..
-   */
+
+  /* unlock if no nodes got added to the clear-node-queue. */
   if (!peer->clear_node_queue->thread)
-    bgp_clear_node_complete (peer->clear_node_queue);
+    peer_unlock (peer);
+
 }
   
 void
@@ -4907,6 +4926,13 @@ bgp_aggregate_add (struct bgp *bgp, struct prefix *p, afi_t afi, safi_t safi,
       /* Process change. */
       bgp_process (bgp, rn, afi, safi);
     }
+  else
+    {
+      if (aspath)
+	aspath_free (aspath);
+      if (community)
+	community_free (community);
+    }
 }
 
 void
@@ -5472,7 +5498,7 @@ bgp_redistribute_add (struct prefix *p, const struct in_addr *nexthop,
 	    attr_new.med = bgp->redist_metric[afi][type];
 
 	  /* Apply route-map. */
-	  if (bgp->rmap[afi][type].map)
+	  if (bgp->rmap[afi][type].name)
 	    {
 	      info.peer = bgp->peer_self;
 	      info.attr = &attr_new;
@@ -7267,6 +7293,17 @@ DEFUN (show_ip_bgp_flap_regexp,
 			  bgp_show_type_flap_regexp);
 }
 
+ALIAS (show_ip_bgp_flap_regexp,
+       show_ip_bgp_damp_flap_regexp_cmd,
+       "show ip bgp dampening flap-statistics regexp .LINE",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display flap statistics of routes\n"
+       "Display routes matching the AS path regular expression\n"
+       "A regular-expression to match the BGP AS paths\n")
+
 DEFUN (show_ip_bgp_ipv4_regexp, 
        show_ip_bgp_ipv4_regexp_cmd,
        "show ip bgp ipv4 (unicast|multicast) regexp .LINE",
@@ -7382,6 +7419,17 @@ DEFUN (show_ip_bgp_flap_prefix_list,
 			       bgp_show_type_flap_prefix_list);
 }
 
+ALIAS (show_ip_bgp_flap_prefix_list,
+       show_ip_bgp_damp_flap_prefix_list_cmd,
+       "show ip bgp dampening flap-statistics prefix-list WORD",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display flap statistics of routes\n"
+       "Display routes conforming to the prefix-list\n"
+       "IP prefix-list name\n")
+
 DEFUN (show_ip_bgp_ipv4_prefix_list, 
        show_ip_bgp_ipv4_prefix_list_cmd,
        "show ip bgp ipv4 (unicast|multicast) prefix-list WORD",
@@ -7496,6 +7544,17 @@ DEFUN (show_ip_bgp_flap_filter_list,
 			       bgp_show_type_flap_filter_list);
 }
 
+ALIAS (show_ip_bgp_flap_filter_list, 
+       show_ip_bgp_damp_flap_filter_list_cmd,
+       "show ip bgp dampening flap-statistics filter-list WORD",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display flap statistics of routes\n"
+       "Display routes conforming to the filter-list\n"
+       "Regular expression access list name\n")
+
 DEFUN (show_ip_bgp_ipv4_filter_list, 
        show_ip_bgp_ipv4_filter_list_cmd,
        "show ip bgp ipv4 (unicast|multicast) filter-list WORD",
@@ -7566,7 +7625,19 @@ DEFUN (show_ipv6_mbgp_filter_list,
 			       bgp_show_type_filter_list);
 }
 #endif /* HAVE_IPV6 */
-
+
+DEFUN (show_ip_bgp_dampening_info,
+       show_ip_bgp_dampening_params_cmd,
+       "show ip bgp dampening parameters",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display detail of configured dampening parameters\n")
+{
+    return bgp_show_dampening_parameters (vty, AFI_IP, SAFI_UNICAST);
+}
+
 static int
 bgp_show_route_map (struct vty *vty, const char *rmap_str, afi_t afi,
 		    safi_t safi, enum bgp_show_type type)
@@ -7610,6 +7681,17 @@ DEFUN (show_ip_bgp_flap_route_map,
   return bgp_show_route_map (vty, argv[0], AFI_IP, SAFI_UNICAST,
 			     bgp_show_type_flap_route_map);
 }
+
+ALIAS (show_ip_bgp_flap_route_map, 
+       show_ip_bgp_damp_flap_route_map_cmd,
+       "show ip bgp dampening flap-statistics route-map WORD",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display flap statistics of routes\n"
+       "Display routes matching the route-map\n"
+       "A route-map to match on\n")
 
 DEFUN (show_ip_bgp_ipv4_route_map, 
        show_ip_bgp_ipv4_route_map_cmd,
@@ -7676,6 +7758,16 @@ DEFUN (show_ip_bgp_flap_cidr_only,
   return bgp_show (vty, NULL, AFI_IP, SAFI_UNICAST,
 		   bgp_show_type_flap_cidr_only, NULL);
 }
+
+ALIAS (show_ip_bgp_flap_cidr_only,
+       show_ip_bgp_damp_flap_cidr_only_cmd,
+       "show ip bgp dampening flap-statistics cidr-only",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display flap statistics of routes\n"
+       "Display only routes with non-natural netmasks\n")
 
 DEFUN (show_ip_bgp_ipv4_cidr_only,
        show_ip_bgp_ipv4_cidr_only_cmd,
@@ -9160,6 +9252,17 @@ DEFUN (show_ip_bgp_flap_prefix_longer,
 				 bgp_show_type_flap_prefix_longer);
 }
 
+ALIAS (show_ip_bgp_flap_prefix_longer,
+       show_ip_bgp_damp_flap_prefix_longer_cmd,
+       "show ip bgp dampening flap-statistics A.B.C.D/M longer-prefixes",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display flap statistics of routes\n"
+       "IP prefix <network>/<length>, e.g., 35.0.0.0/8\n"
+       "Display route and more specific routes\n")
+
 DEFUN (show_ip_bgp_ipv4_prefix_longer,
        show_ip_bgp_ipv4_prefix_longer_cmd,
        "show ip bgp ipv4 (unicast|multicast) A.B.C.D/M longer-prefixes",
@@ -9193,6 +9296,16 @@ DEFUN (show_ip_bgp_flap_address,
 				 bgp_show_type_flap_address);
 }
 
+ALIAS (show_ip_bgp_flap_address,
+       show_ip_bgp_damp_flap_address_cmd,
+       "show ip bgp dampening flap-statistics A.B.C.D",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display flap statistics of routes\n"
+       "Network in the BGP routing table to display\n")
+
 DEFUN (show_ip_bgp_flap_prefix,
        show_ip_bgp_flap_prefix_cmd,
        "show ip bgp flap-statistics A.B.C.D/M",
@@ -9205,6 +9318,17 @@ DEFUN (show_ip_bgp_flap_prefix,
   return bgp_show_prefix_longer (vty, argv[0], AFI_IP, SAFI_UNICAST,
 				 bgp_show_type_flap_prefix);
 }
+
+ALIAS (show_ip_bgp_flap_prefix,
+       show_ip_bgp_damp_flap_prefix_cmd,
+       "show ip bgp dampening flap-statistics A.B.C.D/M",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display flap statistics of routes\n"
+       "IP prefix <network>/<length>, e.g., 35.0.0.0/8\n")
+
 #ifdef HAVE_IPV6
 DEFUN (show_bgp_prefix_longer,
        show_bgp_prefix_longer_cmd,
@@ -12091,6 +12215,15 @@ DEFUN (show_ip_bgp_dampened_paths,
                    NULL);
 }
 
+ALIAS (show_ip_bgp_dampened_paths,
+       show_ip_bgp_damp_dampened_paths_cmd,
+       "show ip bgp dampening dampened-paths",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display paths suppressed due to dampening\n")
+
 DEFUN (show_ip_bgp_flap_statistics,
        show_ip_bgp_flap_statistics_cmd,
        "show ip bgp flap-statistics",
@@ -12102,7 +12235,16 @@ DEFUN (show_ip_bgp_flap_statistics,
   return bgp_show (vty, NULL, AFI_IP, SAFI_UNICAST,
                    bgp_show_type_flap_statistics, NULL);
 }
-
+
+ALIAS (show_ip_bgp_flap_statistics,
+       show_ip_bgp_damp_flap_statistics_cmd,
+       "show ip bgp dampening flap-statistics",
+       SHOW_STR
+       IP_STR
+       BGP_STR
+       "Display detailed information about dampening\n"
+       "Display flap statistics of routes\n")
+
 /* Display specified route of BGP table. */
 static int
 bgp_clear_damp_route (struct vty *vty, const char *view_name, 
@@ -12616,16 +12758,25 @@ bgp_route_init (void)
   install_element (VIEW_NODE, &show_ip_bgp_ipv4_neighbor_routes_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_neighbor_received_prefix_filter_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_ipv4_neighbor_received_prefix_filter_cmd);
+  install_element (VIEW_NODE, &show_ip_bgp_dampening_params_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_dampened_paths_cmd);
+  install_element (VIEW_NODE, &show_ip_bgp_damp_dampened_paths_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_flap_statistics_cmd);
+  install_element (VIEW_NODE, &show_ip_bgp_damp_flap_statistics_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_flap_address_cmd);
+  install_element (VIEW_NODE, &show_ip_bgp_damp_flap_address_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_flap_prefix_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_flap_cidr_only_cmd);
+  install_element (VIEW_NODE, &show_ip_bgp_damp_flap_cidr_only_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_flap_regexp_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_flap_filter_list_cmd);
+  install_element (VIEW_NODE, &show_ip_bgp_damp_flap_filter_list_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_flap_prefix_list_cmd);
+  install_element (VIEW_NODE, &show_ip_bgp_damp_flap_prefix_list_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_flap_prefix_longer_cmd);
+  install_element (VIEW_NODE, &show_ip_bgp_damp_flap_prefix_longer_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_flap_route_map_cmd);
+  install_element (VIEW_NODE, &show_ip_bgp_damp_flap_route_map_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_neighbor_flap_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_neighbor_damp_cmd);
   install_element (VIEW_NODE, &show_ip_bgp_rsclient_cmd);
@@ -12749,16 +12900,27 @@ bgp_route_init (void)
   install_element (ENABLE_NODE, &show_ip_bgp_ipv4_neighbor_routes_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_neighbor_received_prefix_filter_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_ipv4_neighbor_received_prefix_filter_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_dampening_params_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_dampened_paths_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_damp_dampened_paths_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_flap_statistics_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_damp_flap_statistics_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_flap_address_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_damp_flap_address_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_flap_prefix_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_flap_cidr_only_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_damp_flap_cidr_only_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_flap_regexp_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_damp_flap_regexp_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_flap_filter_list_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_damp_flap_filter_list_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_flap_prefix_list_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_damp_flap_prefix_list_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_damp_flap_prefix_list_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_flap_prefix_longer_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_damp_flap_prefix_longer_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_flap_route_map_cmd);
+  install_element (ENABLE_NODE, &show_ip_bgp_damp_flap_route_map_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_neighbor_flap_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_neighbor_damp_cmd);
   install_element (ENABLE_NODE, &show_ip_bgp_rsclient_cmd);

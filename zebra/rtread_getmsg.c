@@ -92,7 +92,7 @@ handle_route_entry (mib2_ipRouteEntry_t *routeEntry)
 
 	rib_add_ipv4 (ZEBRA_ROUTE_KERNEL, zebra_flags, &prefix,
 		      &gateway, NULL, 0, VRF_DEFAULT, RT_TABLE_MAIN,
-		      0, 0, SAFI_UNICAST);
+		      0, 0, 0, SAFI_UNICAST);
 }
 
 void
@@ -156,13 +156,13 @@ route_read (struct zebra_vrf *zvrf)
 
 		/* This is normal loop termination */
 		if (retval == 0 &&
-			msgdata.len >= sizeof (struct T_optmgmt_ack) &&
+			(size_t)msgdata.len >= sizeof (struct T_optmgmt_ack) &&
 			TLIack->PRIM_type == T_OPTMGMT_ACK &&
 			TLIack->MGMT_flags == T_SUCCESS &&
 			MIB2hdr->len == 0)
 			break;
 
-		if (msgdata.len >= sizeof (struct T_error_ack) &&
+		if ((size_t)msgdata.len >= sizeof (struct T_error_ack) &&
 			TLIerr->PRIM_type == T_ERROR_ACK) {
 			zlog_warn ("getmsg(ctl) returned T_ERROR_ACK: %s",
 				safe_strerror ((TLIerr->TLI_error == TSYSERR)
@@ -174,7 +174,7 @@ route_read (struct zebra_vrf *zvrf)
 		   like what GateD does in this instance, but not
 		   critical yet. */
 		if (retval != MOREDATA ||
-			msgdata.len < sizeof (struct T_optmgmt_ack) ||
+			(size_t)msgdata.len < sizeof (struct T_optmgmt_ack) ||
 			TLIack->PRIM_type != T_OPTMGMT_ACK ||
 			TLIack->MGMT_flags != T_SUCCESS) {
 			errno = ENOMSG;

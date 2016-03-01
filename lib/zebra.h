@@ -27,7 +27,6 @@ Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 
 #ifdef SUNOS_5
 #define _XPG4_2
-#define __EXTENSIONS__
 typedef unsigned int    u_int32_t;
 typedef unsigned short  u_int16_t;
 typedef unsigned char   u_int8_t;
@@ -92,6 +91,9 @@ typedef int socklen_t;
 #ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
 #endif /* HAVE_INTTYPES_H */
+#ifdef HAVE_STDBOOL_H
+#include <stdbool.h>
+#endif
 
 /* machine dependent includes */
 #ifdef SUNOS_5
@@ -462,7 +464,6 @@ extern const char *zserv_command_string (unsigned int command);
 #define ZEBRA_FLAG_BLACKHOLE          0x04
 #define ZEBRA_FLAG_IBGP               0x08
 #define ZEBRA_FLAG_SELECTED           0x10
-#define ZEBRA_FLAG_CHANGED            0x20
 #define ZEBRA_FLAG_STATIC             0x40
 #define ZEBRA_FLAG_REJECT             0x80
 

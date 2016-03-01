@@ -39,8 +39,6 @@ enum event {ZCLIENT_SCHEDULE, ZCLIENT_READ, ZCLIENT_CONNECT};
 /* Prototype for event manager. */
 static void zclient_event (enum event, struct zclient *);
 
-extern struct thread_master *master;
-
 const char *zclient_serv_path = NULL;
 
 /* This file local debug flag. */
@@ -48,7 +46,7 @@ int zclient_debug = 0;
 
 /* Allocate zclient structure. */
 struct zclient *
-zclient_new ()
+zclient_new (struct thread_master *master)
 {
   struct zclient *zclient;
   zclient = XCALLOC (MTYPE_ZCLIENT, sizeof (struct zclient));
@@ -56,6 +54,7 @@ zclient_new ()
   zclient->ibuf = stream_new (ZEBRA_MAX_PACKET_SIZ);
   zclient->obuf = stream_new (ZEBRA_MAX_PACKET_SIZ);
   zclient->wb = buffer_new(0);
+  zclient->master = master;
 
   return zclient;
 }
@@ -258,8 +257,8 @@ zclient_flush_data(struct thread *thread)
       return zclient_failed(zclient);
       break;
     case BUFFER_PENDING:
-      zclient->t_write = thread_add_write(master, zclient_flush_data,
-					  zclient, zclient->sock);
+      zclient->t_write = thread_add_write (zclient->master, zclient_flush_data,
+					   zclient, zclient->sock);
       break;
     case BUFFER_EMPTY:
       break;
@@ -284,8 +283,8 @@ zclient_send_message(struct zclient *zclient)
       THREAD_OFF(zclient->t_write);
       break;
     case BUFFER_PENDING:
-      THREAD_WRITE_ON(master, zclient->t_write,
-		      zclient_flush_data, zclient, zclient->sock);
+      THREAD_WRITE_ON (zclient->master, zclient->t_write,
+		       zclient_flush_data, zclient, zclient->sock);
       break;
     }
   return 0;
@@ -300,6 +299,32 @@ zclient_create_header (struct stream *s, uint16_t command, vrf_id_t vrf_id)
   stream_putc (s, ZSERV_VERSION);
   stream_putw (s, vrf_id);
   stream_putw (s, command);
+}
+
+int
+zclient_read_header (struct stream *s, int sock, u_int16_t *size, u_char *marker,
+                     u_char *version, u_int16_t *vrf_id, u_int16_t *cmd)
+{
+  if (stream_read (s, sock, ZEBRA_HEADER_SIZE) != ZEBRA_HEADER_SIZE)
+    return -1;
+
+  *size = stream_getw (s) - ZEBRA_HEADER_SIZE;
+  *marker = stream_getc (s);
+  *version = stream_getc (s);
+  *vrf_id = stream_getw (s);
+  *cmd = stream_getw (s);
+
+  if (*version != ZSERV_VERSION || *marker != ZEBRA_HEADER_MARKER)
+    {
+      zlog_err("%s: socket %d version mismatch, marker %d, version %d",
+               __func__, sock, *marker, *version);
+      return -1;
+    }
+
+  if (*size && stream_read (s, sock, *size) != *size)
+    return -1;
+
+  return 0;
 }
 
 /* Send simple Zebra message. */
@@ -537,6 +562,8 @@ zapi_ipv4_route (u_char cmd, struct zclient *zclient, struct prefix_ipv4 *p,
     stream_putc (s, api->distance);
   if (CHECK_FLAG (api->message, ZAPI_MESSAGE_METRIC))
     stream_putl (s, api->metric);
+  if (CHECK_FLAG (api->message, ZAPI_MESSAGE_MTU))
+    stream_putl (s, api->mtu);
 
   /* Put length at the first point of the stream. */
   stream_putw_at (s, 0, stream_get_endp (s));
@@ -591,6 +618,8 @@ zapi_ipv6_route (u_char cmd, struct zclient *zclient, struct prefix_ipv6 *p,
     stream_putc (s, api->distance);
   if (CHECK_FLAG (api->message, ZAPI_MESSAGE_METRIC))
     stream_putl (s, api->metric);
+  if (CHECK_FLAG (api->message, ZAPI_MESSAGE_MTU))
+    stream_putl (s, api->mtu);
 
   /* Put length at the first point of the stream. */
   stream_putw_at (s, 0, stream_get_endp (s));
@@ -1066,7 +1095,7 @@ zclient_event (enum event event, struct zclient *zclient)
     case ZCLIENT_SCHEDULE:
       if (! zclient->t_connect)
 	zclient->t_connect =
-	  thread_add_event (master, zclient_connect, zclient, 0);
+	  thread_add_event (zclient->master, zclient_connect, zclient, 0);
       break;
     case ZCLIENT_CONNECT:
       if (zclient->fail >= 10)
@@ -1076,12 +1105,12 @@ zclient_event (enum event event, struct zclient *zclient)
 		   zclient->fail < 3 ? 10 : 60);
       if (! zclient->t_connect)
 	zclient->t_connect = 
-	  thread_add_timer (master, zclient_connect, zclient,
+	  thread_add_timer (zclient->master, zclient_connect, zclient,
 			    zclient->fail < 3 ? 10 : 60);
       break;
     case ZCLIENT_READ:
       zclient->t_read = 
-	thread_add_read (master, zclient_read, zclient, zclient->sock);
+	thread_add_read (zclient->master, zclient_read, zclient, zclient->sock);
       break;
     }
 }

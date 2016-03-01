@@ -468,7 +468,6 @@ struct peer
   u_int32_t v_connect;
   u_int32_t v_holdtime;
   u_int32_t v_keepalive;
-  u_int32_t v_asorig;
   u_int32_t v_routeadv;
   u_int32_t v_pmax_restart;
   u_int32_t v_gr_restart;
@@ -480,7 +479,6 @@ struct peer
   struct thread *t_connect;
   struct thread *t_holdtime;
   struct thread *t_keepalive;
-  struct thread *t_asorig;
   struct thread *t_routeadv;
   struct thread *t_pmax_restart;
   struct thread *t_gr_restart;
@@ -746,14 +744,12 @@ struct bgp_nlri
 
 /* BGP timers default value.  */
 #define BGP_INIT_START_TIMER                     5
-#define BGP_ERROR_START_TIMER                   30
-#define BGP_DEFAULT_HOLDTIME                   180
-#define BGP_DEFAULT_KEEPALIVE                   60 
-#define BGP_DEFAULT_ASORIGINATE                 15
+#define BGP_DEFAULT_HOLDTIME                     9
+#define BGP_DEFAULT_KEEPALIVE                    3
 #define BGP_DEFAULT_EBGP_ROUTEADV               30
 #define BGP_DEFAULT_IBGP_ROUTEADV                5
 #define BGP_CLEAR_CONNECT_RETRY                 20
-#define BGP_DEFAULT_CONNECT_RETRY              120
+#define BGP_DEFAULT_CONNECT_RETRY               10
 
 /* BGP default local preference.  */
 #define BGP_DEFAULT_LOCAL_PREF                 100
@@ -836,8 +832,6 @@ enum bgp_clear_type
 
 extern struct bgp_master *bm;
 
-extern struct thread_master *master;
-
 /* Prototypes. */
 extern void bgp_terminate (void);
 extern void bgp_reset (void);
@@ -853,8 +847,17 @@ extern struct peer_group *peer_group_lookup (struct bgp *, const char *);
 extern struct peer_group *peer_group_get (struct bgp *, const char *);
 extern struct peer *peer_lookup_with_open (union sockunion *, as_t, struct in_addr *,
 				    int *);
-extern struct peer *peer_lock (struct peer *);
-extern struct peer *peer_unlock (struct peer *);
+
+/*
+ * Peers are incredibly easy to memory leak
+ * due to the various ways that they are actually used
+ * Provide some functionality to debug locks and unlocks
+ */
+extern struct peer *peer_lock_with_caller(const char *, struct peer *);
+extern struct peer *peer_unlock_with_caller(const char *, struct peer *);
+#define peer_unlock(A) peer_unlock_with_caller(__FUNCTION__, (A))
+#define peer_lock(B) peer_lock_with_caller(__FUNCTION__, (B))
+
 extern bgp_peer_sort_t peer_sort (struct peer *peer);
 extern int peer_active (struct peer *);
 extern int peer_active_nego (struct peer *);

@@ -2119,6 +2119,8 @@ cmd_describe_command_real (vector vline, struct vty *vty, int *status)
   char *command;
   vector matches = NULL;
   vector match_vector;
+  uint32_t command_found = 0;
+  const char *last_word;
 
   /* Set index. */
   if (vector_active (vline) == 0)
@@ -2205,40 +2207,54 @@ cmd_describe_command_real (vector vline, struct vty *vty, int *status)
 
   /* Make description vector. */
   for (i = 0; i < vector_active (matches); i++)
-    if ((cmd_element = vector_slot (cmd_vector, i)) != NULL)
-      {
-        unsigned int j;
-        const char *last_word;
-        vector vline_trimmed;
+    {
+      if ((cmd_element = vector_slot (cmd_vector, i)) != NULL)
+	{
+	  unsigned int j;
+	  vector vline_trimmed;
 
-        last_word = vector_slot(vline, vector_active(vline) - 1);
-        if (last_word == NULL || !strlen(last_word))
-          {
-            vline_trimmed = vector_copy(vline);
-            vector_unset(vline_trimmed, vector_active(vline_trimmed) - 1);
+	  command_found++;
+	  last_word = vector_slot(vline, vector_active(vline) - 1);
+	  if (last_word == NULL || !strlen(last_word))
+	    {
+	      vline_trimmed = vector_copy(vline);
+	      vector_unset(vline_trimmed, vector_active(vline_trimmed) - 1);
 
-            if (cmd_is_complete(cmd_element, vline_trimmed)
-                && desc_unique_string(matchvec, command_cr))
-              {
-                if (match != vararg_match)
-                  vector_set(matchvec, &token_cr);
-              }
+	      if (cmd_is_complete(cmd_element, vline_trimmed)
+		  && desc_unique_string(matchvec, command_cr))
+		{
+		  if (match != vararg_match)
+		    vector_set(matchvec, &token_cr);
+		}
 
-            vector_free(vline_trimmed);
-          }
+	      vector_free(vline_trimmed);
+	    }
 
-        match_vector = vector_slot (matches, i);
-        if (match_vector)
-          for (j = 0; j < vector_active(match_vector); j++)
-            {
-              struct cmd_token *token = vector_slot(match_vector, j);
-              const char *string;
+	  match_vector = vector_slot (matches, i);
+	  if (match_vector)
+	    {
+	      for (j = 0; j < vector_active(match_vector); j++)
+		{
+		  struct cmd_token *token = vector_slot(match_vector, j);
+		  const char *string;
 
-              string = cmd_entry_function_desc(command, token);
-              if (string && desc_unique_string(matchvec, string))
-                vector_set(matchvec, token);
-            }
-      }
+		  string = cmd_entry_function_desc(command, token);
+		  if (string && desc_unique_string(matchvec, string))
+		    vector_set(matchvec, token);
+		}
+	    }
+	}
+    }
+
+  /*
+   * We can get into this situation when the command is complete
+   * but the last part of the command is an optional piece of
+   * the cli.
+   */
+  last_word = vector_slot(vline, vector_active(vline) - 1);
+  if (command_found == 0 && (last_word == NULL || !strlen(last_word)))
+    vector_set(matchvec, &token_cr);
+
   vector_free (cmd_vector);
   cmd_matches_free(&matches);
 
@@ -2778,34 +2794,69 @@ cmd_execute_command_strict (vector vline, struct vty *vty,
   return cmd_execute_command_real(vline, FILTER_STRICT, vty, cmd);
 }
 
+/**
+ * Parse one line of config, walking up the parse tree attempting to find a match
+ *
+ * @param vty The vty context in which the command should be executed.
+ * @param cmd Pointer where the struct cmd_element* of the match command
+ *            will be stored, if any.  May be set to NULL if this info is
+ *            not needed.
+ * @param use_daemon Boolean to control whether or not we match on CMD_SUCCESS_DAEMON
+ *                   or not.
+ * @return The status of the command that has been executed or an error code
+ *         as to why no command could be executed.
+ */
+int
+command_config_read_one_line (struct vty *vty, struct cmd_element **cmd, int use_daemon)
+{
+  vector vline;
+  int saved_node;
+  int ret;
+
+  vline = cmd_make_strvec (vty->buf);
+
+  /* In case of comment line */
+  if (vline == NULL)
+    return CMD_SUCCESS;
+
+  /* Execute configuration command : this is strict match */
+  ret = cmd_execute_command_strict (vline, vty, cmd);
+
+  saved_node = vty->node;
+
+  while (!(use_daemon && ret == CMD_SUCCESS_DAEMON) &&
+	 ret != CMD_SUCCESS && ret != CMD_WARNING &&
+	 ret != CMD_ERR_NOTHING_TODO && vty->node != CONFIG_NODE) {
+    vty->node = node_parent(vty->node);
+    ret = cmd_execute_command_strict (vline, vty, NULL);
+  }
+
+  // If climbing the tree did not work then ignore the command and
+  // stay at the same node
+  if (!(use_daemon && ret == CMD_SUCCESS_DAEMON) &&
+      ret != CMD_SUCCESS && ret != CMD_WARNING &&
+      ret != CMD_ERR_NOTHING_TODO)
+    {
+      vty->node = saved_node;
+    }
+
+  cmd_free_strvec (vline);
+
+  return ret;
+}
+
 /* Configration make from file. */
 int
 config_from_file (struct vty *vty, FILE *fp, unsigned int *line_num)
 {
   int ret;
   *line_num = 0;
-  vector vline;
 
   while (fgets (vty->buf, VTY_BUFSIZ, fp))
     {
       ++(*line_num);
-      vline = cmd_make_strvec (vty->buf);
 
-      /* In case of comment line */
-      if (vline == NULL)
-	continue;
-      /* Execute configuration command : this is strict match */
-      ret = cmd_execute_command_strict (vline, vty, NULL);
-
-      /* Try again with setting node to CONFIG_NODE */
-      while (ret != CMD_SUCCESS && ret != CMD_WARNING
-	     && ret != CMD_ERR_NOTHING_TODO && vty->node != CONFIG_NODE)
-	{
-	  vty->node = node_parent(vty->node);
-	  ret = cmd_execute_command_strict (vline, vty, NULL);
-	}
-
-      cmd_free_strvec (vline);
+      ret = command_config_read_one_line (vty, NULL, 0);
 
       if (ret != CMD_SUCCESS && ret != CMD_WARNING
 	  && ret != CMD_ERR_NOTHING_TODO)
@@ -4144,7 +4195,7 @@ cmd_init (int terminal)
       install_element (VIEW_NODE, &show_work_queues_cmd);
       install_element (ENABLE_NODE, &show_work_queues_cmd);
     }
-  srand(time(NULL));
+  srandom(time(NULL));
 }
 
 static void

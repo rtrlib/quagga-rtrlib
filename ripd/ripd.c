@@ -1168,7 +1168,8 @@ rip_response_process (struct rip_packet *packet, int size,
   struct prefix_ipv4 ifaddr;
   struct prefix_ipv4 ifaddrclass;
   int subnetted;
-      
+
+  memset(&ifaddr, 0, sizeof(ifaddr));
   /* We don't know yet. */
   subnetted = -1;
 
@@ -2573,7 +2574,7 @@ rip_update_process (int route_type)
 
 	  if (IS_RIP_DEBUG_EVENT) 
 	    zlog_debug("SEND UPDATE to %s ifindex %d",
-		       (ifp->name ? ifp->name : "_unknown_"), ifp->ifindex);
+		       ifp->name, ifp->ifindex);
 
           /* send update on each connected network */
 	  for (ALL_LIST_ELEMENTS (ifp->connected, ifnode, ifnnode, connected))
@@ -2859,7 +2860,7 @@ rip_update_jitter (unsigned long time)
   if (jitter_input < JITTER_BOUND)
     jitter_input = JITTER_BOUND;
   
-  jitter = (((rand () % ((jitter_input * 2) + 1)) - jitter_input));  
+  jitter = (((random () % ((jitter_input * 2) + 1)) - jitter_input));  
 
   return jitter/JITTER_BOUND;
 }
@@ -4132,7 +4133,7 @@ void
 rip_init (void)
 {
   /* Randomize for triggered update random(). */
-  srand (time (NULL));
+  srandom (time (NULL));
 
   /* Install top nodes. */
   install_node (&rip_node, config_write_rip);
