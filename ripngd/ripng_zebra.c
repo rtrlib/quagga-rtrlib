@@ -42,7 +42,7 @@ static void
 ripng_zebra_ipv6_send (struct route_node *rp, u_char cmd)
 {
   static struct in6_addr **nexthops = NULL;
-  static unsigned int *ifindexes = NULL;
+  static ifindex_t *ifindexes = NULL;
   static unsigned int nexthops_len = 0;
 
   struct list *list = (struct list *)rp->info;
@@ -147,7 +147,7 @@ ripng_zebra_read_ipv6 (int command, struct zclient *zclient,
   /* IPv6 prefix. */
   memset (&p, 0, sizeof (struct prefix_ipv6));
   p.family = AF_INET6;
-  p.prefixlen = stream_getc (s);
+  p.prefixlen = MIN(IPV6_MAX_PREFIXLEN, stream_getc (s));
   stream_get (&p.prefix, s, PSIZE (p.prefixlen));
 
   /* Nexthop, ifindex, distance, metric. */

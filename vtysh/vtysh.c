@@ -87,9 +87,9 @@ vclient_close (struct vtysh_client *vclient)
 
 /* Following filled with debug code to trace a problematic condition
  * under load - it SHOULD handle it. */
-#define ERR_WHERE_STRING "vtysh(): vtysh_client_config(): "
+#define ERR_WHERE_STRING "vtysh(): vtysh_client_execute(): "
 static int
-vtysh_client_config (struct vtysh_client *vclient, char *line)
+vtysh_client_execute (struct vtysh_client *vclient, const char *line, FILE *fp)
 {
   int ret;
   char *buf;
@@ -100,6 +100,7 @@ vtysh_client_config (struct vtysh_client *vclient, char *line)
   int nbytes;
   int i;
   int readln;
+  int numnulls = 0;
 
   if (vclient->fd < 0)
     return CMD_SUCCESS;
@@ -145,111 +146,87 @@ vtysh_client_config (struct vtysh_client *vclient, char *line)
 	  XFREE(MTYPE_TMP, buf);
 	  return CMD_SUCCESS;
 	}
+      /* If we have already seen 3 nulls, then current byte is ret code */
+      if ((numnulls == 3) && (nbytes == 1))
+        {
+           ret = pbuf[0];
+           break;
+        }
 
       pbuf[nbytes] = '\0';
 
-      if (nbytes >= 4)
-	{
-	  i = nbytes - 4;
-	  if (pbuf[i] == '\0' && pbuf[i + 1] == '\0' && pbuf[i + 2] == '\0')
-	    {
-	      ret = pbuf[i + 3];
-	      break;
-	    }
-	}
-      pbuf += nbytes;
+       /* If the config needs to be written in file or stdout */
+       if (fp)
+       {
+         fputs(pbuf, fp);
+         fflush (fp);
+       }
 
-      /* See if a line exists in buffer, if so parse and consume it, and
-       * reset read position. */
-      if ((eoln = strrchr(buf, '\n')) == NULL)
-	continue;
+       /* At max look last four bytes */
+       if (nbytes >= 4)
+       {
+         i = nbytes - 4;
+         numnulls = 0;
+       }
+       else
+         i = 0;
 
-      if (eoln >= ((buf + bufsz) - 1))
-	{
-	  fprintf (stderr, ERR_WHERE_STRING \
-		   "warning - eoln beyond buffer end.\n");
-	}
-      vtysh_config_parse(buf);
+       /* Count the numnulls */ 
+       while (i < nbytes && numnulls <3)
+       {
+         if (pbuf[i++] == '\0')
+            numnulls++;
+         else
+            numnulls = 0;
+       }
+       /* We might have seen 3 consecutive nulls so store the ret code before updating pbuf*/
+       ret = pbuf[nbytes-1];
+       pbuf += nbytes;
 
-      eoln++;
-      left = (size_t)(buf + bufsz - eoln);
-      memmove(buf, eoln, left);
-      buf[bufsz-1] = '\0';
-      pbuf = buf + strlen(buf);
+       /* See if a line exists in buffer, if so parse and consume it, and
+        * reset read position. If 3 nulls has been encountered consume the buffer before 
+        * next read.
+        */
+       if (((eoln = strrchr(buf, '\n')) == NULL) && (numnulls<3))
+         continue;
+
+       if (eoln >= ((buf + bufsz) - 1))
+       {
+          fprintf (stderr, ERR_WHERE_STRING \
+               "warning - eoln beyond buffer end.\n");
+       }
+
+       /* If the config needs parsing, consume it */
+       if(!fp)
+         vtysh_config_parse(buf);
+
+       eoln++;
+       left = (size_t)(buf + bufsz - eoln);
+       /*
+        * This check is required since when a config line split between two consecutive reads, 
+        * then buf will have first half of config line and current read will bring rest of the 
+        * line. So in this case eoln will be 1 here, hence calculation of left will be wrong. 
+        * In this case we don't need to do memmove, because we have already seen 3 nulls.  
+        */
+       if(left < bufsz)
+         memmove(buf, eoln, left);
+
+       buf[bufsz-1] = '\0';
+       pbuf = buf + strlen(buf);
+       /* got 3 or more trailing NULs? */
+       if ((numnulls >=3) && (i < nbytes))
+       {
+          break;
+       }
     }
 
-  /* Parse anything left in the buffer. */
-
-  vtysh_config_parse (buf);
+  if(!fp)
+    vtysh_config_parse (buf);
 
   XFREE(MTYPE_TMP, buf);
   return ret;
 }
-
-static int
-vtysh_client_execute (struct vtysh_client *vclient, const char *line, FILE *fp)
-{
-  int ret;
-  char buf[1001];
-  int nbytes;
-  int i; 
-  int numnulls = 0;
-
-  if (vclient->fd < 0)
-    return CMD_SUCCESS;
-
-  ret = write (vclient->fd, line, strlen (line) + 1);
-  if (ret <= 0)
-    {
-      vclient_close (vclient);
-      return CMD_SUCCESS;
-    }
-	
-  while (1)
-    {
-      nbytes = read (vclient->fd, buf, sizeof(buf)-1);
-
-      if (nbytes <= 0 && errno != EINTR)
-	{
-	  vclient_close (vclient);
-	  return CMD_SUCCESS;
-	}
-
-      if (nbytes > 0)
-	{
-	  if ((numnulls == 3) && (nbytes == 1))
-	    return buf[0];
-
-	  buf[nbytes] = '\0';
-	  fputs (buf, fp);
-	  fflush (fp);
-	  
-	  /* check for trailling \0\0\0<ret code>, 
-	   * even if split across reads 
-	   * (see lib/vty.c::vtysh_read)
-	   */
-          if (nbytes >= 4) 
-            {
-              i = nbytes-4;
-              numnulls = 0;
-            }
-          else
-            i = 0;
-          
-          while (i < nbytes && numnulls < 3)
-            {
-              if (buf[i++] == '\0')
-                numnulls++;
-              else
-                numnulls = 0;
-            }
-
-          /* got 3 or more trailing NULs? */
-          if ((numnulls >= 3) && (i < nbytes))
-            return (buf[nbytes-1]);
-	}
-    }
-}
+ 
 
 void
 vtysh_pager_init (void)
@@ -303,7 +280,9 @@ vtysh_execute_func (const char *line, int pager)
    * to move into node in the vtysh where it succeeded. */
   if (ret == CMD_SUCCESS || ret == CMD_SUCCESS_DAEMON || ret == CMD_WARNING)
     {
-      if ((saved_node == BGP_VPNV4_NODE || saved_node == BGP_IPV4_NODE
+      if ((saved_node == BGP_VPNV4_NODE || saved_node == BGP_VPNV6_NODE
+	   || saved_node == BGP_ENCAP_NODE || saved_node == BGP_ENCAPV6_NODE
+           || saved_node == BGP_IPV4_NODE
 	   || saved_node == BGP_IPV6_NODE || saved_node == BGP_IPV4M_NODE
 	   || saved_node == BGP_IPV6M_NODE)
 	  && (tried == 1))
@@ -713,6 +692,24 @@ static struct cmd_node bgp_vpnv4_node =
   "%s(config-router-af)# "
 };
 
+static struct cmd_node bgp_vpnv6_node =
+{
+  BGP_VPNV6_NODE,
+  "%s(config-router-af)# "
+};
+
+static struct cmd_node bgp_encap_node =
+{
+  BGP_ENCAP_NODE,
+  "%s(config-router-af)# "
+};
+
+static struct cmd_node bgp_encapv6_node =
+{
+  BGP_ENCAPV6_NODE,
+  "%s(config-router-af)# "
+};
+
 static struct cmd_node bgp_ipv4_node =
 {
   BGP_IPV4_NODE,
@@ -855,6 +852,62 @@ DEFUNSH (VTYSH_BGPD,
 	 "Address Family Modifier\n")
 {
   vty->node = BGP_VPNV4_NODE;
+  return CMD_SUCCESS;
+}
+
+DEFUNSH (VTYSH_BGPD,
+	 address_family_vpnv6,
+	 address_family_vpnv6_cmd,
+	 "address-family vpnv6",
+	 "Enter Address Family command mode\n"
+	 "Address family\n")
+{
+  vty->node = BGP_VPNV6_NODE;
+  return CMD_SUCCESS;
+}
+
+DEFUNSH (VTYSH_BGPD,
+	 address_family_vpnv6_unicast,
+	 address_family_vpnv6_unicast_cmd,
+	 "address-family vpnv6 unicast",
+	 "Enter Address Family command mode\n"
+	 "Address family\n"
+	 "Address Family Modifier\n")
+{
+  vty->node = BGP_VPNV6_NODE;
+  return CMD_SUCCESS;
+}
+
+DEFUNSH (VTYSH_BGPD,
+	 address_family_encap,
+	 address_family_encap_cmd,
+	 "address-family encap",
+	 "Enter Address Family command mode\n"
+	 "Address family\n")
+{
+  vty->node = BGP_ENCAP_NODE;
+  return CMD_SUCCESS;
+}
+
+DEFUNSH (VTYSH_BGPD,
+	 address_family_encapv4,
+	 address_family_encapv4_cmd,
+	 "address-family encapv4",
+	 "Enter Address Family command mode\n"
+	 "Address family\n")
+{
+  vty->node = BGP_ENCAP_NODE;
+  return CMD_SUCCESS;
+}
+
+DEFUNSH (VTYSH_BGPD,
+	 address_family_encapv6,
+	 address_family_encapv6_cmd,
+	 "address-family encapv6",
+	 "Enter Address Family command mode\n"
+	 "Address family\n")
+{
+  vty->node = BGP_ENCAPV6_NODE;
   return CMD_SUCCESS;
 }
 
@@ -1084,6 +1137,9 @@ vtysh_exit (struct vty *vty)
       vty->node = CONFIG_NODE;
       break;
     case BGP_VPNV4_NODE:
+    case BGP_VPNV6_NODE:
+    case BGP_ENCAP_NODE:
+    case BGP_ENCAPV6_NODE:
     case BGP_IPV4_NODE:
     case BGP_IPV4M_NODE:
     case BGP_IPV6_NODE:
@@ -1122,6 +1178,9 @@ DEFUNSH (VTYSH_BGPD,
   if (vty->node == BGP_IPV4_NODE
       || vty->node == BGP_IPV4M_NODE
       || vty->node == BGP_VPNV4_NODE
+      || vty->node == BGP_VPNV6_NODE
+      || vty->node == BGP_ENCAP_NODE
+      || vty->node == BGP_ENCAPV6_NODE
       || vty->node == BGP_IPV6_NODE
       || vty->node == BGP_IPV6M_NODE)
     vty->node = BGP_NODE;
@@ -1768,7 +1827,7 @@ DEFUN (vtysh_write_terminal,
   vty_out (vty, "!%s", VTY_NEWLINE);
 
   for (i = 0; i < array_size(vtysh_client); i++)
-    vtysh_client_config (&vtysh_client[i], line);
+    vtysh_client_execute (&vtysh_client[i], line, NULL);
 
   /* Integrate vtysh specific configuration. */
   vtysh_config_write ();
@@ -1869,7 +1928,7 @@ write_config_integrated(void)
     }
 
   for (i = 0; i < array_size(vtysh_client); i++)
-    vtysh_client_config (&vtysh_client[i], line);
+    vtysh_client_execute (&vtysh_client[i], line, NULL);
 
   vtysh_config_dump (fp);
 
@@ -2332,6 +2391,9 @@ vtysh_init_vty (void)
   install_node (&rmap_node, NULL);
   install_node (&zebra_node, NULL);
   install_node (&bgp_vpnv4_node, NULL);
+  install_node (&bgp_vpnv6_node, NULL);
+  install_node (&bgp_encap_node, NULL);
+  install_node (&bgp_encapv6_node, NULL);
   install_node (&bgp_ipv4_node, NULL);
   install_node (&bgp_ipv4m_node, NULL);
 /* #ifdef HAVE_IPV6 */
@@ -2358,6 +2420,9 @@ vtysh_init_vty (void)
   vtysh_install_default (RMAP_NODE);
   vtysh_install_default (ZEBRA_NODE);
   vtysh_install_default (BGP_VPNV4_NODE);
+  vtysh_install_default (BGP_VPNV6_NODE);
+  vtysh_install_default (BGP_ENCAP_NODE);
+  vtysh_install_default (BGP_ENCAPV6_NODE);
   vtysh_install_default (BGP_IPV4_NODE);
   vtysh_install_default (BGP_IPV4M_NODE);
   vtysh_install_default (BGP_IPV6_NODE);
@@ -2395,6 +2460,12 @@ vtysh_init_vty (void)
   install_element (BGP_NODE, &vtysh_quit_bgpd_cmd);
   install_element (BGP_VPNV4_NODE, &vtysh_exit_bgpd_cmd);
   install_element (BGP_VPNV4_NODE, &vtysh_quit_bgpd_cmd);
+  install_element (BGP_VPNV6_NODE, &vtysh_exit_bgpd_cmd);
+  install_element (BGP_VPNV6_NODE, &vtysh_quit_bgpd_cmd);
+  install_element (BGP_ENCAP_NODE, &vtysh_exit_bgpd_cmd);
+  install_element (BGP_ENCAP_NODE, &vtysh_quit_bgpd_cmd);
+  install_element (BGP_ENCAPV6_NODE, &vtysh_exit_bgpd_cmd);
+  install_element (BGP_ENCAPV6_NODE, &vtysh_quit_bgpd_cmd);
   install_element (BGP_IPV4_NODE, &vtysh_exit_bgpd_cmd);
   install_element (BGP_IPV4_NODE, &vtysh_quit_bgpd_cmd);
   install_element (BGP_IPV4M_NODE, &vtysh_exit_bgpd_cmd);
@@ -2428,6 +2499,9 @@ vtysh_init_vty (void)
   install_element (BGP_IPV4_NODE, &vtysh_end_all_cmd);
   install_element (BGP_IPV4M_NODE, &vtysh_end_all_cmd);
   install_element (BGP_VPNV4_NODE, &vtysh_end_all_cmd);
+  install_element (BGP_VPNV6_NODE, &vtysh_end_all_cmd);
+  install_element (BGP_ENCAP_NODE, &vtysh_end_all_cmd);
+  install_element (BGP_ENCAPV6_NODE, &vtysh_end_all_cmd);
   install_element (BGP_IPV6_NODE, &vtysh_end_all_cmd);
   install_element (BGP_IPV6M_NODE, &vtysh_end_all_cmd);
   install_element (ISIS_NODE, &vtysh_end_all_cmd);
@@ -2456,6 +2530,10 @@ vtysh_init_vty (void)
   install_element (CONFIG_NODE, &enable_rpki_cmd);
   install_element (BGP_NODE, &address_family_vpnv4_cmd);
   install_element (BGP_NODE, &address_family_vpnv4_unicast_cmd);
+  install_element (BGP_NODE, &address_family_vpnv6_cmd);
+  install_element (BGP_NODE, &address_family_vpnv6_unicast_cmd);
+  install_element (BGP_NODE, &address_family_encap_cmd);
+  install_element (BGP_NODE, &address_family_encapv6_cmd);
   install_element (BGP_NODE, &address_family_ipv4_unicast_cmd);
   install_element (BGP_NODE, &address_family_ipv4_multicast_cmd);
 #ifdef HAVE_IPV6
@@ -2463,6 +2541,9 @@ vtysh_init_vty (void)
   install_element (BGP_NODE, &address_family_ipv6_unicast_cmd);
 #endif
   install_element (BGP_VPNV4_NODE, &exit_address_family_cmd);
+  install_element (BGP_VPNV6_NODE, &exit_address_family_cmd);
+  install_element (BGP_ENCAP_NODE, &exit_address_family_cmd);
+  install_element (BGP_ENCAPV6_NODE, &exit_address_family_cmd);
   install_element (BGP_IPV4_NODE, &exit_address_family_cmd);
   install_element (BGP_IPV4M_NODE, &exit_address_family_cmd);
   install_element (BGP_IPV6_NODE, &exit_address_family_cmd);

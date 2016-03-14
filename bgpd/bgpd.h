@@ -125,6 +125,7 @@ struct bgp
 #define BGP_FLAG_ASPATH_MULTIPATH_RELAX   (1 << 14)
 #define BGP_FLAG_VALIDATE_DISABLE         (1 << 15)
 #define BGP_FLAG_DISALLOW_INVALID         (1 << 16)
+#define BGP_FLAG_DELETING                 (1 << 15)
 
   /* BGP Per AF flags */
   u_int32_t af_flags[AFI_MAX][SAFI_MAX];
@@ -206,10 +207,8 @@ struct bgp_nexthop
 {
   struct interface *ifp;
   struct in_addr v4;
-#ifdef HAVE_IPV6
   struct in6_addr v6_global;
   struct in6_addr v6_local;
-#endif /* HAVE_IPV6 */  
 };
 
 /* BGP router distinguisher value.  */
@@ -343,7 +342,7 @@ struct peer
   time_t readtime;		/* Last read time */
   time_t resettime;		/* Last reset time */
   
-  unsigned int ifindex;		/* ifindex of the BGP connection. */
+  ifindex_t ifindex;		/* ifindex of the BGP connection. */
   char *ifname;			/* bind interface name. */
   char *update_if;
   union sockunion *update_source;
@@ -649,6 +648,7 @@ struct bgp_nlri
 #define BGP_ATTR_AS4_PATH                       17
 #define BGP_ATTR_AS4_AGGREGATOR                 18
 #define BGP_ATTR_AS_PATHLIMIT                   21
+#define BGP_ATTR_ENCAP                          23
 
 /* BGP update origin.  */
 #define BGP_ORIGIN_IGP                           0
@@ -674,6 +674,7 @@ struct bgp_nlri
 #define BGP_NOTIFY_HEADER_MAX                    4
 
 /* BGP_NOTIFY_OPEN_ERR sub codes.  */
+#define BGP_NOTIFY_OPEN_UNSPECIFIC               0
 #define BGP_NOTIFY_OPEN_UNSUP_VERSION            1
 #define BGP_NOTIFY_OPEN_BAD_PEER_AS              2
 #define BGP_NOTIFY_OPEN_BAD_BGP_IDENT            3
@@ -744,8 +745,8 @@ struct bgp_nlri
 
 /* BGP timers default value.  */
 #define BGP_INIT_START_TIMER                     5
-#define BGP_DEFAULT_HOLDTIME                     9
-#define BGP_DEFAULT_KEEPALIVE                    3
+#define BGP_DEFAULT_HOLDTIME                   180
+#define BGP_DEFAULT_KEEPALIVE                   60 
 #define BGP_DEFAULT_EBGP_ROUTEADV               30
 #define BGP_DEFAULT_IBGP_ROUTEADV                5
 #define BGP_CLEAR_CONNECT_RETRY                 20

@@ -82,10 +82,13 @@ enum node_type
   BABEL_NODE,			/* Babel protocol mode node. */
   BGP_NODE,			/* BGP protocol mode which includes BGP4+ */
   BGP_VPNV4_NODE,		/* BGP MPLS-VPN PE exchange. */
+  BGP_VPNV6_NODE,		/* BGP MPLS-VPN PE exchange. */
   BGP_IPV4_NODE,		/* BGP IPv4 unicast address family.  */
   BGP_IPV4M_NODE,		/* BGP IPv4 multicast address family.  */
   BGP_IPV6_NODE,		/* BGP IPv6 address family */
   BGP_IPV6M_NODE,		/* BGP IPv6 multicast address family. */
+  BGP_ENCAP_NODE,		/* BGP ENCAP SAFI */
+  BGP_ENCAPV6_NODE,		/* BGP ENCAP SAFI */
   OSPF_NODE,			/* OSPF protocol mode */
   OSPF6_NODE,			/* OSPF protocol for IPv6 mode */
   ISIS_NODE,			/* ISIS protocol mode */
@@ -457,6 +460,17 @@ struct cmd_token
 
 #endif /* VTYSH_EXTRACT_PL */
 
+/*
+ * Sometimes #defines create maximum values that
+ * need to have strings created from them that
+ * allow the parser to match against them.
+ * These macros allow that.
+ */
+#define CMD_CREATE_STR(s)  CMD_CREATE_STR_HELPER(s)
+#define CMD_CREATE_STR_HELPER(s) #s
+#define CMD_RANGE_STR(a,s) "<" CMD_CREATE_STR(a) "-" CMD_CREATE_STR(s) ">"
+
+
 /* Common descriptions. */
 #define SHOW_STR "Show running system information\n"
 #define IP_STR "IP information\n"
@@ -527,6 +541,7 @@ extern vector cmd_make_strvec (const char *);
 extern void cmd_free_strvec (vector);
 extern vector cmd_describe_command (vector, struct vty *, int *status);
 extern char **cmd_complete_command (vector, struct vty *, int *status);
+extern char **cmd_complete_command_lib (vector, struct vty *, int *status, int islib);
 extern const char *cmd_prompt (enum node_type);
 extern int command_config_read_one_line (struct vty *vty, struct cmd_element **, int use_config_node);
 extern int config_from_file (struct vty *, FILE *, unsigned int *line_num);

@@ -1711,7 +1711,6 @@ struct route_map_rule_cmd route_set_aggregator_as_cmd =
   route_set_aggregator_as_free,
 };
 
-#ifdef HAVE_IPV6
 /* `match ipv6 address IP_ACCESS_LIST' */
 
 static route_map_result_t
@@ -2072,8 +2071,6 @@ struct route_map_rule_cmd route_set_ipv6_nexthop_peer_cmd =
   route_set_ipv6_nexthop_peer_free
 };
 
-#endif /* HAVE_IPV6 */
-
 /* `set vpnv4 nexthop A.B.C.D' */
 
 static route_map_result_t
@@ -2091,6 +2088,7 @@ route_set_vpnv4_nexthop (void *rule, struct prefix *prefix,
     
       /* Set next hop value. */ 
       (bgp_attr_extra_get (bgp_info->attr))->mp_nexthop_global_in = *address;
+      (bgp_attr_extra_get (bgp_info->attr))->mp_nexthop_len = 4;
     }
 
   return RMAP_OKAY;
@@ -2296,6 +2294,9 @@ bgp_route_map_update (const char *unused)
   struct bgp_node *bn;
   struct bgp_static *bgp_static;
 
+  if (bm->bgp == NULL)          /* may be called during cleanup */
+    return;
+
   /* For neighbor route-map updates. */
   for (ALL_LIST_ELEMENTS (bm->bgp, mnode, mnnode, bgp))
     {
@@ -2384,14 +2385,12 @@ bgp_route_map_update (const char *unused)
     {
       for (i = 0; i < ZEBRA_ROUTE_MAX; i++)
 	{
-	  if (bgp->rmap[ZEBRA_FAMILY_IPV4][i].name)
-	    bgp->rmap[ZEBRA_FAMILY_IPV4][i].map = 
-	      route_map_lookup_by_name (bgp->rmap[ZEBRA_FAMILY_IPV4][i].name);
-#ifdef HAVE_IPV6
-	  if (bgp->rmap[ZEBRA_FAMILY_IPV6][i].name)
-	    bgp->rmap[ZEBRA_FAMILY_IPV6][i].map =
-	      route_map_lookup_by_name (bgp->rmap[ZEBRA_FAMILY_IPV6][i].name);
-#endif /* HAVE_IPV6 */
+	  if (bgp->rmap[AFI_IP][i].name)
+	    bgp->rmap[AFI_IP][i].map =
+	      route_map_lookup_by_name (bgp->rmap[AFI_IP][i].name);
+	  if (bgp->rmap[AFI_IP6][i].name)
+	    bgp->rmap[AFI_IP6][i].map =
+	      route_map_lookup_by_name (bgp->rmap[AFI_IP][i].name);
 	}
     }
 }
@@ -3608,8 +3607,6 @@ ALIAS (no_set_aggregator_as,
        "AS number\n"
        "IP address of aggregator\n")
 
-
-#ifdef HAVE_IPV6
 DEFUN (match_ipv6_address, 
        match_ipv6_address_cmd,
        "match ipv6 address WORD",
@@ -3777,7 +3774,6 @@ ALIAS (no_set_ipv6_nexthop_local,
        "IPv6 next-hop address\n"
        "IPv6 local address\n"
        "IPv6 address of next hop\n")
-#endif /* HAVE_IPV6 */
 
 DEFUN (set_vpnv4_nexthop,
        set_vpnv4_nexthop_cmd,
@@ -4043,7 +4039,6 @@ bgp_route_map_init (void)
   install_element (RMAP_NODE, &no_set_originator_id_cmd);
   install_element (RMAP_NODE, &no_set_originator_id_val_cmd);
 
-#ifdef HAVE_IPV6
   route_map_install_match (&route_match_ipv6_address_cmd);
   route_map_install_match (&route_match_ipv6_next_hop_cmd);
   route_map_install_match (&route_match_ipv6_address_prefix_list_cmd);
@@ -4065,7 +4060,6 @@ bgp_route_map_init (void)
   install_element (RMAP_NODE, &no_set_ipv6_nexthop_local_val_cmd);
   install_element (RMAP_NODE, &set_ipv6_nexthop_peer_cmd);
   install_element (RMAP_NODE, &no_set_ipv6_nexthop_peer_cmd);
-#endif /* HAVE_IPV6 */
 
   /* AS-Pathlimit: functionality removed, commands kept for
    * compatibility.

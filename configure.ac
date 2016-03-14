@@ -5,9 +5,9 @@
 ##  Copyright (c) 1996, 97, 98, 99, 2000 Kunihiro Ishiguro <kunihiro@zebra.org>
 ##  Portions Copyright (c) 2003 Paul Jakma <paul@dishone.st>
 ##
-AC_PREREQ(2.53)
+AC_PREREQ(2.60)
 
-AC_INIT(Quagga, 0.99.25-dev, [https://bugzilla.quagga.net])
+AC_INIT(Quagga, 1.0.20160309, [https://bugzilla.quagga.net])
 CONFIG_ARGS="$*"
 AC_SUBST(CONFIG_ARGS)
 AC_CONFIG_SRCDIR(lib/zebra.h)
@@ -70,6 +70,7 @@ AC_LANG([C])
 AC_PROG_CC
 AC_PROG_CPP
 AM_PROG_CC_C_O
+AC_PROG_RANLIB
 AC_PROG_EGREP
 
 dnl autoconf 2.59 appears not to support AC_PROG_SED
@@ -254,15 +255,11 @@ AC_ARG_WITH(libpam,
   AS_HELP_STRING([--with-libpam], [use libpam for PAM support in vtysh]))
 AC_ARG_ENABLE(tcp-zebra,
   AS_HELP_STRING([--enable-tcp-zebra], [enable TCP/IP socket connection between zebra and protocol daemon]))
-AC_ARG_ENABLE(opaque-lsa,
-  AS_HELP_STRING([--disable-opaque-lsa],[do not build OSPF Opaque-LSA with OSPFAPI support (RFC2370)]))
 AC_ARG_ENABLE(ospfapi,
   AS_HELP_STRING([--disable-ospfapi], [do not build OSPFAPI to access the OSPF LSA Database]))
 AC_ARG_ENABLE(ospfclient,
   AS_HELP_STRING([--disable-ospfclient], [do not build OSPFAPI client for OSPFAPI,
                           (this is the default if --disable-ospfapi is set)]))
-AC_ARG_ENABLE(ospf-te,
-  AS_HELP_STRING([--disable-ospf-te],[disable Traffic Engineering Extension to OSPF]))
 AC_ARG_ENABLE(multipath,
   AS_HELP_STRING([--enable-multipath=ARG], [enable multipath function, ARG must be digit]))
 AC_ARG_ENABLE(user,
@@ -328,15 +325,6 @@ if test "${enable_tcp_zebra}" = "yes"; then
   AC_DEFINE(HAVE_TCP_ZEBRA,,Use TCP for zebra communication)
 fi
 
-if test "${enable_opaque_lsa}" != "no"; then
-  AC_DEFINE(HAVE_OPAQUE_LSA,,OSPF Opaque LSA)
-fi
-
-if test "${enable_ospf_te}" != "no"; then
-  AC_DEFINE(HAVE_OPAQUE_LSA,,OSPF Opaque LSA)
-  AC_DEFINE(HAVE_OSPF_TE,,OSPF TE)
-fi
-
 if test "${enable_linux24_tcp_md5}" = "yes"; then
   AC_DEFINE(HAVE_TCP_MD5_LINUX24,,Old Linux 2.4 TCP MD5 Signature Patch)
 fi
@@ -395,11 +383,14 @@ AC_DEFINE_UNQUOTED(CONFIGFILE_MASK, ${enable_configfile_mask}, Mask for config f
 enable_logfile_mask=${enable_logfile_mask:-0600}
 AC_DEFINE_UNQUOTED(LOGFILE_MASK, ${enable_logfile_mask}, Mask for log files)
 
-MULTIPATH_NUM=1
+MPATH_NUM=1
 
 case "${enable_multipath}" in
-  [[0-9]|[1-9][0-9]])
-    MULTIPATH_NUM="${enable_multipath}"
+  0)
+    MPATH_NUM=64
+    ;;
+  [[1-9]|[1-9][0-9]|[1-9][0-9][0-9]])
+    MPATH_NUM="${enable_multipath}"
     ;;
   "")
     ;;
@@ -408,7 +399,7 @@ case "${enable_multipath}" in
     ;;
 esac
 
-AC_SUBST(MULTIPATH_NUM)
+AC_DEFINE_UNQUOTED(MULTIPATH_NUM, $MPATH_NUM, Maximum number of paths for a route)
 
 dnl -----------------------------------
 dnl Add extra version string to package
@@ -1158,16 +1149,14 @@ fi
 AM_CONDITIONAL(WATCHQUAGGA, test "x$WATCHQUAGGA" = "xwatchquagga")
 
 OSPFCLIENT=""
-if test "${enable_opaque_lsa}" != "no"; then
-  if test "${enable_ospfapi}" != "no";then
+if test "${enable_ospfapi}" != "no";then
     AC_DEFINE(SUPPORT_OSPF_API,,OSPFAPI)
 
-    if test "${enable_ospfclient}" != "no";then
+  if test "${enable_ospfclient}" != "no";then
       OSPFCLIENT="ospfclient"
-    fi
   fi
-
 fi
+
 AM_CONDITIONAL(OSPFCLIENT, test "x$OSPFCLIENT" = "xospfclient")
 
 case "${enable_ripngd}" in

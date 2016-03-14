@@ -70,7 +70,7 @@ static int if_leave_all_router (int, struct interface *);
 
 static int
 rtadv_recv_packet (int sock, u_char *buf, int buflen,
-		   struct sockaddr_in6 *from, unsigned int *ifindex,
+		   struct sockaddr_in6 *from, ifindex_t *ifindex,
 		   int *hoplimit)
 {
   int ret;
@@ -294,24 +294,6 @@ rtadv_send_packet (int sock, struct interface *ifp)
     }
 
   /* Hardware address. */
-#ifdef HAVE_STRUCT_SOCKADDR_DL
-  sdl = &ifp->sdl;
-  if (sdl != NULL && sdl->sdl_alen != 0)
-    {
-      buf[len++] = ND_OPT_SOURCE_LINKADDR;
-
-      /* Option length should be rounded up to next octet if
-         the link address does not end on an octet boundary. */
-      buf[len++] = (sdl->sdl_alen + 9) >> 3;
-
-      memcpy (buf + len, LLADDR (sdl), sdl->sdl_alen);
-      len += sdl->sdl_alen;
-
-      /* Pad option to end on an octet boundary. */
-      memset (buf + len, 0, -(sdl->sdl_alen + 2) & 0x7);
-      len += -(sdl->sdl_alen + 2) & 0x7;
-    }
-#else
   if (ifp->hw_addr_len != 0)
     {
       buf[len++] = ND_OPT_SOURCE_LINKADDR;
@@ -327,7 +309,6 @@ rtadv_send_packet (int sock, struct interface *ifp)
       memset (buf + len, 0, -(ifp->hw_addr_len + 2) & 0x7);
       len += -(ifp->hw_addr_len + 2) & 0x7;
     }
-#endif /* HAVE_STRUCT_SOCKADDR_DL */
 
   /* MTU */
   if (zif->rtadv.AdvLinkMTU)
@@ -427,7 +408,7 @@ rtadv_process_advert (void)
 }
 
 static void
-rtadv_process_packet (u_char *buf, unsigned int len, unsigned int ifindex,
+rtadv_process_packet (u_char *buf, unsigned int len, ifindex_t ifindex,
     int hoplimit, vrf_id_t vrf_id)
 {
   struct icmp6_hdr *icmph;
@@ -491,7 +472,7 @@ rtadv_read (struct thread *thread)
   int len;
   u_char buf[RTADV_MSG_SIZE];
   struct sockaddr_in6 from;
-  unsigned int ifindex = 0;
+  ifindex_t ifindex = 0;
   int hoplimit = -1;
   struct zebra_vrf *zvrf = THREAD_ARG (thread);
 

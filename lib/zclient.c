@@ -112,6 +112,8 @@ zclient_init (struct zclient *zclient, int redist_default)
 void
 zclient_stop (struct zclient *zclient)
 {
+  int i;
+
   if (zclient_debug)
     zlog_debug ("zclient stopped");
 
@@ -134,6 +136,14 @@ zclient_stop (struct zclient *zclient)
       zclient->sock = -1;
     }
   zclient->fail = 0;
+
+  for (i = 0; i < ZEBRA_ROUTE_MAX; i++)
+    {
+      vrf_bitmap_free(zclient->redist[i]);
+      zclient->redist[i] = VRF_BITMAP_NULL;
+    }
+  vrf_bitmap_free(zclient->default_information);
+  zclient->default_information = VRF_BITMAP_NULL;
 }
 
 void
@@ -651,18 +661,30 @@ zebra_redistribute_send (int command, struct zclient *zclient, int type,
   return zclient_send_message(zclient);
 }
 
+/* Get prefix in ZServ format; family should be filled in on prefix */
+static void
+zclient_stream_get_prefix (struct stream *s, struct prefix *p)
+{
+  size_t plen = prefix_blen (p);
+  u_char c;
+  p->prefixlen = 0;
+  
+  if (plen == 0)
+    return;
+  
+  stream_get (&p->u.prefix, s, plen);
+  c = stream_getc(s);
+  p->prefixlen = MIN(plen * 8, c);
+}
+
 /* Router-id update from zebra daemon. */
 void
 zebra_router_id_update_read (struct stream *s, struct prefix *rid)
 {
-  int plen;
-
   /* Fetch interface address. */
   rid->family = stream_getc (s);
-
-  plen = prefix_blen (rid);
-  stream_get (&rid->u.prefix, s, plen);
-  rid->prefixlen = stream_getc (s);
+  
+  zclient_stream_get_prefix (s, rid);
 }
 
 /* Interface addition from zebra daemon. */
@@ -791,13 +813,10 @@ zebra_interface_if_set_value (struct stream *s, struct interface *ifp)
   ifp->mtu = stream_getl (s);
   ifp->mtu6 = stream_getl (s);
   ifp->bandwidth = stream_getl (s);
-#ifdef HAVE_STRUCT_SOCKADDR_DL
-  stream_get (&ifp->sdl, s, sizeof (ifp->sdl_storage));
-#else
+  ifp->ll_type = stream_getl (s);
   ifp->hw_addr_len = stream_getl (s);
   if (ifp->hw_addr_len)
-    stream_get (ifp->hw_addr, s, ifp->hw_addr_len);
-#endif /* HAVE_STRUCT_SOCKADDR_DL */
+    stream_get (ifp->hw_addr, s, MIN(ifp->hw_addr_len, INTERFACE_HWADDR_MAX));
 }
 
 static int
@@ -814,11 +833,10 @@ memconstant(const void *s, int c, size_t n)
 struct connected *
 zebra_interface_address_read (int type, struct stream *s, vrf_id_t vrf_id)
 {
-  unsigned int ifindex;
+  ifindex_t ifindex;
   struct interface *ifp;
   struct connected *ifc;
-  struct prefix p, d;
-  int family;
+  struct prefix p, d, *dp;
   int plen;
   u_char ifc_flags;
 
@@ -843,21 +861,21 @@ zebra_interface_address_read (int type, struct stream *s, vrf_id_t vrf_id)
   ifc_flags = stream_getc (s);
 
   /* Fetch interface address. */
-  family = p.family = stream_getc (s);
-
-  plen = prefix_blen (&p);
-  stream_get (&p.u.prefix, s, plen);
-  p.prefixlen = stream_getc (s);
+  d.family = p.family = stream_getc (s);
+  plen = prefix_blen (&d);
+  
+  zclient_stream_get_prefix (s, &p);
 
   /* Fetch destination address. */
   stream_get (&d.u.prefix, s, plen);
-  d.family = family;
-
+  
+  /* N.B. NULL destination pointers are encoded as all zeroes */
+  dp = memconstant(&d.u.prefix,0,plen) ? NULL : &d;
+  
   if (type == ZEBRA_INTERFACE_ADDRESS_ADD) 
     {
        /* N.B. NULL destination pointers are encoded as all zeroes */
-       ifc = connected_add_by_prefix(ifp, &p,(memconstant(&d.u.prefix,0,plen) ?
-					      NULL : &d));
+       ifc = connected_add_by_prefix(ifp, &p, dp);
        if (ifc != NULL)
 	 {
 	   ifc->flags = ifc_flags;

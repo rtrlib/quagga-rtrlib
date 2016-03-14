@@ -27,7 +27,6 @@
 #define MTYPE_OPAQUE_INFO_PER_ID	0
 
 #include <zebra.h>
-#ifdef HAVE_OPAQUE_LSA
 
 #include "linklist.h"
 #include "prefix.h"
@@ -62,9 +61,7 @@
  * Followings are initialize/terminate functions for Opaque-LSAs handling.
  *------------------------------------------------------------------------*/
 
-#ifdef HAVE_OSPF_TE
 #include "ospfd/ospf_te.h"
-#endif /* HAVE_OSPF_TE */
 
 #ifdef SUPPORT_OSPF_API
 int ospf_apiserver_init (void);
@@ -87,10 +84,8 @@ ospf_opaque_init (void)
   ospf_opaque_register_vty ();
   ospf_opaque_funclist_init ();
 
-#ifdef HAVE_OSPF_TE
   if (ospf_mpls_te_init () != 0)
     exit (1);
-#endif /* HAVE_OSPF_TE */
 
 #ifdef SUPPORT_OSPF_API
   if ((ospf_apiserver_enable) && (ospf_apiserver_init () != 0))
@@ -103,9 +98,7 @@ ospf_opaque_init (void)
 void
 ospf_opaque_term (void)
 {
-#ifdef HAVE_OSPF_TE
   ospf_mpls_te_term ();
-#endif /* HAVE_OSPF_TE */
 
 #ifdef SUPPORT_OSPF_API
   ospf_apiserver_term ();
@@ -2179,4 +2172,3 @@ oi_to_top (struct ospf_interface *oi)
   return top;
 }
 
-#endif /* HAVE_OPAQUE_LSA */

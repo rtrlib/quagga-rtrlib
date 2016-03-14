@@ -231,7 +231,6 @@ bgp_exit (int status)
   struct listnode *node, *nnode;
   int *socket;
   struct interface *ifp;
-  extern struct zclient *zclient;
   extern struct zclient *zlookup;
 
   /* it only makes sense for this to be called on a clean exit */
@@ -323,8 +322,9 @@ bgp_exit (int status)
   vrf_terminate ();
   cmd_terminate ();
   vty_terminate ();
-  if (zclient)
-    zclient_free (zclient);
+  bgp_address_destroy();
+  bgp_scan_destroy();
+  bgp_zebra_destroy();
   if (zlookup)
     zclient_free (zlookup);
   if (bgp_nexthop_buf)

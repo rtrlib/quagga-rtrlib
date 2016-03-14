@@ -20,6 +20,7 @@
  */
 
 #include <zebra.h>
+#include <net/if_arp.h>
 
 /* Hack for GNU libc version 2. */
 #ifndef MSG_TRUNC
@@ -68,7 +69,7 @@ extern u_int32_t nl_rcvbufsize;
 /* Note: on netlink systems, there should be a 1-to-1 mapping between interface
    names and ifindex values. */
 static void
-set_ifindex(struct interface *ifp, unsigned int ifi_index)
+set_ifindex(struct interface *ifp, ifindex_t ifi_index)
 {
   struct interface *oifp;
 
@@ -462,6 +463,68 @@ netlink_interface_update_hw_addr (struct rtattr **tb, struct interface *ifp)
     }
 }
 
+static enum zebra_link_type
+netlink_to_zebra_link_type (unsigned int hwt)
+{
+  switch (hwt)
+  {
+    case ARPHRD_ETHER: return ZEBRA_LLT_ETHER;
+    case ARPHRD_EETHER: return ZEBRA_LLT_EETHER;
+    case ARPHRD_AX25: return ZEBRA_LLT_AX25;
+    case ARPHRD_PRONET: return ZEBRA_LLT_PRONET;
+    case ARPHRD_IEEE802: return ZEBRA_LLT_IEEE802;
+    case ARPHRD_ARCNET: return ZEBRA_LLT_ARCNET;
+    case ARPHRD_APPLETLK: return ZEBRA_LLT_APPLETLK;
+    case ARPHRD_DLCI: return ZEBRA_LLT_DLCI;
+    case ARPHRD_ATM: return ZEBRA_LLT_ATM;
+    case ARPHRD_METRICOM: return ZEBRA_LLT_METRICOM;
+    case ARPHRD_IEEE1394: return ZEBRA_LLT_IEEE1394;
+    case ARPHRD_EUI64: return ZEBRA_LLT_EUI64;
+    case ARPHRD_INFINIBAND: return ZEBRA_LLT_INFINIBAND;
+    case ARPHRD_SLIP: return ZEBRA_LLT_SLIP;
+    case ARPHRD_CSLIP: return ZEBRA_LLT_CSLIP;
+    case ARPHRD_SLIP6: return ZEBRA_LLT_SLIP6;
+    case ARPHRD_CSLIP6: return ZEBRA_LLT_CSLIP6;
+    case ARPHRD_RSRVD: return ZEBRA_LLT_RSRVD;
+    case ARPHRD_ADAPT: return ZEBRA_LLT_ADAPT;
+    case ARPHRD_ROSE: return ZEBRA_LLT_ROSE;
+    case ARPHRD_X25: return ZEBRA_LLT_X25;
+    case ARPHRD_PPP: return ZEBRA_LLT_PPP;
+    case ARPHRD_CISCO: return ZEBRA_LLT_CHDLC;
+    case ARPHRD_LAPB: return ZEBRA_LLT_LAPB;
+    case ARPHRD_RAWHDLC: return ZEBRA_LLT_RAWHDLC;
+    case ARPHRD_TUNNEL: return ZEBRA_LLT_IPIP;
+    case ARPHRD_TUNNEL6: return ZEBRA_LLT_IPIP6;
+    case ARPHRD_FRAD: return ZEBRA_LLT_FRAD;
+    case ARPHRD_SKIP: return ZEBRA_LLT_SKIP;
+    case ARPHRD_LOOPBACK: return ZEBRA_LLT_LOOPBACK;
+    case ARPHRD_LOCALTLK: return ZEBRA_LLT_LOCALTLK;
+    case ARPHRD_FDDI: return ZEBRA_LLT_FDDI;
+    case ARPHRD_SIT: return ZEBRA_LLT_SIT;
+    case ARPHRD_IPDDP: return ZEBRA_LLT_IPDDP;
+    case ARPHRD_IPGRE: return ZEBRA_LLT_IPGRE;
+    case ARPHRD_PIMREG: return ZEBRA_LLT_PIMREG;
+    case ARPHRD_HIPPI: return ZEBRA_LLT_HIPPI;
+    case ARPHRD_ECONET: return ZEBRA_LLT_ECONET;
+    case ARPHRD_IRDA: return ZEBRA_LLT_IRDA;
+    case ARPHRD_FCPP: return ZEBRA_LLT_FCPP;
+    case ARPHRD_FCAL: return ZEBRA_LLT_FCAL;
+    case ARPHRD_FCPL: return ZEBRA_LLT_FCPL;
+    case ARPHRD_FCFABRIC: return ZEBRA_LLT_FCFABRIC;
+    case ARPHRD_IEEE802_TR: return ZEBRA_LLT_IEEE802_TR;
+    case ARPHRD_IEEE80211: return ZEBRA_LLT_IEEE80211;
+    case ARPHRD_IEEE802154: return ZEBRA_LLT_IEEE802154;
+#ifdef ARPHRD_IP6GRE
+    case ARPHRD_IP6GRE: return ZEBRA_LLT_IP6GRE;
+#endif
+#ifdef ARPHRD_IEEE802154_PHY
+    case ARPHRD_IEEE802154_PHY: return ZEBRA_LLT_IEEE802154_PHY;
+#endif
+
+    default: return ZEBRA_LLT_UNKNOWN;
+  }
+}
+
 /* Called from interface_lookup_netlink().  This function is only used
    during bootstrap. */
 static int
@@ -509,7 +572,7 @@ netlink_interface (struct sockaddr_nl *snl, struct nlmsghdr *h,
   ifp->metric = 0;
 
   /* Hardware type and address. */
-  ifp->hw_type = ifi->ifi_type;
+  ifp->ll_type = netlink_to_zebra_link_type (ifi->ifi_type);
   netlink_interface_update_hw_addr (tb, ifp);
 
   if_add_update (ifp);
@@ -667,7 +730,6 @@ netlink_routing_table (struct sockaddr_nl *snl, struct nlmsghdr *h,
 
   int index;
   int table;
-  int metric;
   u_int32_t mtu = 0;
 
   void *dest;
@@ -709,7 +771,6 @@ netlink_routing_table (struct sockaddr_nl *snl, struct nlmsghdr *h,
     flags |= ZEBRA_FLAG_SELFROUTE;
 
   index = 0;
-  metric = 0;
   dest = NULL;
   gate = NULL;
   src = NULL;
@@ -727,9 +788,6 @@ netlink_routing_table (struct sockaddr_nl *snl, struct nlmsghdr *h,
 
   if (tb[RTA_GATEWAY])
     gate = RTA_DATA (tb[RTA_GATEWAY]);
-
-  if (tb[RTA_PRIORITY])
-    metric = *(int *) RTA_DATA(tb[RTA_PRIORITY]);
 
   if (tb[RTA_METRICS])
     {
@@ -752,7 +810,7 @@ netlink_routing_table (struct sockaddr_nl *snl, struct nlmsghdr *h,
 
       if (!tb[RTA_MULTIPATH])
           rib_add_ipv4 (ZEBRA_ROUTE_KERNEL, flags, &p, gate, src, index,
-                        vrf_id, table, metric, mtu, 0, SAFI_UNICAST);
+                        vrf_id, table, 0, mtu, 0, SAFI_UNICAST);
       else
         {
           /* This is a multipath route */
@@ -767,7 +825,7 @@ netlink_routing_table (struct sockaddr_nl *snl, struct nlmsghdr *h,
           rib->type = ZEBRA_ROUTE_KERNEL;
           rib->distance = 0;
           rib->flags = flags;
-          rib->metric = metric;
+          rib->metric = 0;
           rib->mtu = mtu;
           rib->vrf_id = vrf_id;
           rib->table = table;
@@ -819,7 +877,7 @@ netlink_routing_table (struct sockaddr_nl *snl, struct nlmsghdr *h,
       p.prefixlen = rtm->rtm_dst_len;
 
       rib_add_ipv6 (ZEBRA_ROUTE_KERNEL, flags, &p, gate, index, vrf_id,
-                    table, metric, mtu, 0, SAFI_UNICAST);
+                    table, 0, mtu, 0, SAFI_UNICAST);
     }
 #endif /* HAVE_IPV6 */
 
@@ -854,7 +912,6 @@ netlink_route_change (struct sockaddr_nl *snl, struct nlmsghdr *h,
 
   int index;
   int table;
-  int metric;
   u_int32_t mtu = 0;
 
   void *dest;
@@ -915,7 +972,6 @@ netlink_route_change (struct sockaddr_nl *snl, struct nlmsghdr *h,
     }
 
   index = 0;
-  metric = 0;
   dest = NULL;
   gate = NULL;
   src = NULL;
@@ -936,9 +992,6 @@ netlink_route_change (struct sockaddr_nl *snl, struct nlmsghdr *h,
 
   if (h->nlmsg_type == RTM_NEWROUTE)
     {
-      if (tb[RTA_PRIORITY])
-        metric = *(int *) RTA_DATA(tb[RTA_PRIORITY]);
-
       if (tb[RTA_METRICS])
         {
           struct rtattr *mxrta[RTAX_MAX+1];
@@ -971,7 +1024,7 @@ netlink_route_change (struct sockaddr_nl *snl, struct nlmsghdr *h,
         {
           if (!tb[RTA_MULTIPATH])
             rib_add_ipv4 (ZEBRA_ROUTE_KERNEL, 0, &p, gate, src, index, vrf_id,
-                          table, metric, mtu, 0, SAFI_UNICAST);
+                          table, 0, mtu, 0, SAFI_UNICAST);
           else
             {
               /* This is a multipath route */
@@ -986,7 +1039,7 @@ netlink_route_change (struct sockaddr_nl *snl, struct nlmsghdr *h,
               rib->type = ZEBRA_ROUTE_KERNEL;
               rib->distance = 0;
               rib->flags = 0;
-              rib->metric = metric;
+              rib->metric = 0;
               rib->mtu = mtu;
               rib->vrf_id = vrf_id;
               rib->table = table;
@@ -1053,7 +1106,7 @@ netlink_route_change (struct sockaddr_nl *snl, struct nlmsghdr *h,
 
       if (h->nlmsg_type == RTM_NEWROUTE)
         rib_add_ipv6 (ZEBRA_ROUTE_KERNEL, 0, &p, gate, index, vrf_id, table,
-                      metric, mtu, 0, SAFI_UNICAST);
+                      0, mtu, 0, SAFI_UNICAST);
       else
         rib_delete_ipv6 (ZEBRA_ROUTE_KERNEL, 0, &p, gate, index, vrf_id,
                          SAFI_UNICAST);
@@ -1607,8 +1660,7 @@ _netlink_route_debug(
 
 /* Routing table change via netlink interface. */
 static int
-netlink_route_multipath (int cmd, struct prefix *p, struct rib *rib,
-                         int family)
+netlink_route_multipath (int cmd, struct prefix *p, struct rib *rib)
 {
   int bytelen;
   struct sockaddr_nl snl;
@@ -1616,6 +1668,7 @@ netlink_route_multipath (int cmd, struct prefix *p, struct rib *rib,
   int recursing;
   int nexthop_num;
   int discard;
+  int family = PREFIX_FAMILY(p);
   const char *routedesc;
 
   struct
@@ -1632,13 +1685,13 @@ netlink_route_multipath (int cmd, struct prefix *p, struct rib *rib,
   bytelen = (family == AF_INET ? 4 : 16);
 
   req.n.nlmsg_len = NLMSG_LENGTH (sizeof (struct rtmsg));
-  req.n.nlmsg_flags = NLM_F_CREATE | NLM_F_REQUEST;
+  req.n.nlmsg_flags = NLM_F_CREATE | NLM_F_REPLACE | NLM_F_REQUEST;
   req.n.nlmsg_type = cmd;
   req.r.rtm_family = family;
   req.r.rtm_table = rib->table;
   req.r.rtm_dst_len = p->prefixlen;
   req.r.rtm_protocol = RTPROT_ZEBRA;
-  req.r.rtm_scope = RT_SCOPE_UNIVERSE;
+  req.r.rtm_scope = RT_SCOPE_LINK;
 
   if ((rib->flags & ZEBRA_FLAG_BLACKHOLE) || (rib->flags & ZEBRA_FLAG_REJECT))
     discard = 1;
@@ -1663,7 +1716,7 @@ netlink_route_multipath (int cmd, struct prefix *p, struct rib *rib,
   addattr_l (&req.n, sizeof req, RTA_DST, &p->u.prefix, bytelen);
 
   /* Metric. */
-  addattr32 (&req.n, sizeof req, RTA_PRIORITY, rib->metric);
+  addattr32 (&req.n, sizeof req, RTA_PRIORITY, NL_DEFAULT_ROUTE_METRIC);
 
   if (rib->mtu || rib->nexthop_mtu)
     {
@@ -1705,6 +1758,10 @@ netlink_route_multipath (int cmd, struct prefix *p, struct rib *rib,
         continue;
       if (cmd == RTM_DELROUTE && !CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB))
         continue;
+
+      if (nexthop->type != NEXTHOP_TYPE_IFINDEX &&
+          nexthop->type != NEXTHOP_TYPE_IFNAME)
+        req.r.rtm_scope = RT_SCOPE_UNIVERSE;
 
       nexthop_num++;
     }
@@ -1752,7 +1809,7 @@ netlink_route_multipath (int cmd, struct prefix *p, struct rib *rib,
       nexthop_num = 0;
       for (ALL_NEXTHOPS_RO(rib->nexthop, nexthop, tnexthop, recursing))
         {
-          if (MULTIPATH_NUM != 0 && nexthop_num >= MULTIPATH_NUM)
+          if (nexthop_num >= MULTIPATH_NUM)
             break;
 
           if (CHECK_FLAG(nexthop->flags, NEXTHOP_FLAG_RECURSIVE))
@@ -1803,30 +1860,18 @@ skip:
 }
 
 int
-kernel_add_ipv4 (struct prefix *p, struct rib *rib)
+kernel_route_rib (struct prefix *p, struct rib *old, struct rib *new)
 {
-  return netlink_route_multipath (RTM_NEWROUTE, p, rib, AF_INET);
-}
+  if (!old && new)
+    return netlink_route_multipath (RTM_NEWROUTE, p, new);
+  if (old && !new)
+    return netlink_route_multipath (RTM_DELROUTE, p, old);
 
-int
-kernel_delete_ipv4 (struct prefix *p, struct rib *rib)
-{
-  return netlink_route_multipath (RTM_DELROUTE, p, rib, AF_INET);
+   /* Replace, can be done atomically if metric does not change;
+    * netlink uses [prefix, tos, priority] to identify prefix.
+    * Now metric is not sent to kernel, so we can just do atomic replace. */
+  return netlink_route_multipath (RTM_NEWROUTE, p, new);
 }
-
-#ifdef HAVE_IPV6
-int
-kernel_add_ipv6 (struct prefix *p, struct rib *rib)
-{
-  return netlink_route_multipath (RTM_NEWROUTE, p, rib, AF_INET6);
-}
-
-int
-kernel_delete_ipv6 (struct prefix *p, struct rib *rib)
-{
-  return netlink_route_multipath (RTM_DELROUTE, p, rib, AF_INET6);
-}
-#endif /* HAVE_IPV6 */
 
 /* Interface address modification. */
 static int

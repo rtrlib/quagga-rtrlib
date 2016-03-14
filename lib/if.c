@@ -189,41 +189,41 @@ if_add_hook (int type, int (*func)(struct interface *ifp))
 
 /* Interface existance check by index. */
 struct interface *
-if_lookup_by_index_vrf (unsigned int index, vrf_id_t vrf_id)
+if_lookup_by_index_vrf (ifindex_t ifindex, vrf_id_t vrf_id)
 {
   struct listnode *node;
   struct interface *ifp;
 
   for (ALL_LIST_ELEMENTS_RO (vrf_iflist (vrf_id), node, ifp))
     {
-      if (ifp->ifindex == index)
+      if (ifp->ifindex == ifindex)
 	return ifp;
     }
   return NULL;
 }
 
 struct interface *
-if_lookup_by_index (unsigned int index)
+if_lookup_by_index (ifindex_t ifindex)
 {
-  return if_lookup_by_index_vrf (index, VRF_DEFAULT);
+  return if_lookup_by_index_vrf (ifindex, VRF_DEFAULT);
 }
 
 const char *
-ifindex2ifname_vrf (unsigned int index, vrf_id_t vrf_id)
+ifindex2ifname_vrf (ifindex_t ifindex, vrf_id_t vrf_id)
 {
   struct interface *ifp;
 
-  return ((ifp = if_lookup_by_index_vrf (index, vrf_id)) != NULL) ?
+  return ((ifp = if_lookup_by_index_vrf (ifindex, vrf_id)) != NULL) ?
   	 ifp->name : "unknown";
 }
 
 const char *
-ifindex2ifname (unsigned int index)
+ifindex2ifname (ifindex_t ifindex)
 {
-  return ifindex2ifname_vrf (index, VRF_DEFAULT);
+  return ifindex2ifname_vrf (ifindex, VRF_DEFAULT);
 }
 
-unsigned int
+ifindex_t
 ifname2ifindex_vrf (const char *name, vrf_id_t vrf_id)
 {
   struct interface *ifp;
@@ -232,7 +232,7 @@ ifname2ifindex_vrf (const char *name, vrf_id_t vrf_id)
                                                    : IFINDEX_INTERNAL;
 }
 
-unsigned int
+ifindex_t
 ifname2ifindex (const char *name)
 {
   return ifname2ifindex_vrf (name, VRF_DEFAULT);
@@ -928,7 +928,7 @@ connected_add_by_prefix (struct interface *ifp, struct prefix *p,
 }
 
 #ifndef HAVE_IF_NAMETOINDEX
-unsigned int
+ifindex_t
 if_nametoindex (const char *name)
 {
   struct interface *ifp;
@@ -940,7 +940,7 @@ if_nametoindex (const char *name)
 
 #ifndef HAVE_IF_INDEXTONAME
 char *
-if_indextoname (unsigned int ifindex, char *name)
+if_indextoname (ifindex_t ifindex, char *name)
 {
   struct interface *ifp;
 
@@ -1005,7 +1005,7 @@ ifaddr_ipv4_delete (struct in_addr *ifaddr, struct interface *ifp)
 
 /* Lookup interface by interface's IP address or interface index. */
 static struct interface *
-ifaddr_ipv4_lookup (struct in_addr *addr, unsigned int ifindex)
+ifaddr_ipv4_lookup (struct in_addr *addr, ifindex_t ifindex)
 {
   struct prefix_ipv4 p;
   struct route_node *rn;
@@ -1064,4 +1064,64 @@ if_terminate (vrf_id_t vrf_id, struct list **intf_list)
 
   if (vrf_id == VRF_DEFAULT)
     iflist = NULL;
+}
+
+const char *
+if_link_type_str (enum zebra_link_type llt)
+{
+  switch (llt)
+    {
+#define llts(T,S) case (T): return (S)
+      llts(ZEBRA_LLT_UNKNOWN,               "Unknown");
+      llts(ZEBRA_LLT_ETHER,                 "Ethernet");
+      llts(ZEBRA_LLT_EETHER,                "Experimental Ethernet");
+      llts(ZEBRA_LLT_AX25,                  "AX.25 Level 2");
+      llts(ZEBRA_LLT_PRONET,                "PROnet token ring");
+      llts(ZEBRA_LLT_IEEE802,               "IEEE 802.2 Ethernet/TR/TB");
+      llts(ZEBRA_LLT_ARCNET,                "ARCnet");
+      llts(ZEBRA_LLT_APPLETLK,              "AppleTalk");
+      llts(ZEBRA_LLT_DLCI,                  "Frame Relay DLCI");
+      llts(ZEBRA_LLT_ATM,                   "ATM");
+      llts(ZEBRA_LLT_METRICOM,              "Metricom STRIP");
+      llts(ZEBRA_LLT_IEEE1394,              "IEEE 1394 IPv4");
+      llts(ZEBRA_LLT_EUI64,                 "EUI-64");
+      llts(ZEBRA_LLT_INFINIBAND,            "InfiniBand");
+      llts(ZEBRA_LLT_SLIP,                  "SLIP");
+      llts(ZEBRA_LLT_CSLIP,                 "Compressed SLIP");
+      llts(ZEBRA_LLT_SLIP6,                 "SLIPv6");
+      llts(ZEBRA_LLT_CSLIP6,                "Compressed SLIPv6");
+      llts(ZEBRA_LLT_ROSE,                  "ROSE packet radio");
+      llts(ZEBRA_LLT_X25,                   "CCITT X.25");
+      llts(ZEBRA_LLT_PPP,                   "PPP");
+      llts(ZEBRA_LLT_CHDLC,                 "Cisco HDLC");
+      llts(ZEBRA_LLT_RAWHDLC,               "Raw HDLC");
+      llts(ZEBRA_LLT_LAPB,                  "LAPB");
+      llts(ZEBRA_LLT_IPIP,                  "IPIP Tunnel");
+      llts(ZEBRA_LLT_IPIP6,                 "IPIP6 Tunnel");
+      llts(ZEBRA_LLT_FRAD,                  "FRAD");
+      llts(ZEBRA_LLT_SKIP,                  "SKIP vif");
+      llts(ZEBRA_LLT_LOOPBACK,              "Loopback");
+      llts(ZEBRA_LLT_LOCALTLK,              "Localtalk");
+      llts(ZEBRA_LLT_FDDI,                  "FDDI");
+      llts(ZEBRA_LLT_SIT,                   "IPv6-in-IPv4 SIT");
+      llts(ZEBRA_LLT_IPDDP,                 "IP-in-DDP tunnel");
+      llts(ZEBRA_LLT_IPGRE,                 "GRE over IP");
+      llts(ZEBRA_LLT_PIMREG,                "PIMSM registration");
+      llts(ZEBRA_LLT_HIPPI,                 "HiPPI");
+      llts(ZEBRA_LLT_IRDA,                  "IrDA");
+      llts(ZEBRA_LLT_FCPP,                  "Fibre-Channel PtP");
+      llts(ZEBRA_LLT_FCAL,                  "Fibre-Channel Arbitrated Loop");
+      llts(ZEBRA_LLT_FCPL,                  "Fibre-Channel Public Loop");
+      llts(ZEBRA_LLT_FCFABRIC,              "Fibre-Channel Fabric");
+      llts(ZEBRA_LLT_IEEE802_TR,            "IEEE 802.2 Token Ring");
+      llts(ZEBRA_LLT_IEEE80211,             "IEEE 802.11");
+      llts(ZEBRA_LLT_IEEE80211_RADIOTAP,    "IEEE 802.11 Radiotap");
+      llts(ZEBRA_LLT_IEEE802154,            "IEEE 802.15.4");
+      llts(ZEBRA_LLT_IEEE802154_PHY,        "IEEE 802.15.4 Phy");
+      default:
+        zlog_warn ("Unknown value %d", llt);
+        return "Unknown type!";
+#undef llts
+    }
+  return NULL;
 }

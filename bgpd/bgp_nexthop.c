@@ -30,6 +30,7 @@ Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 #include "memory.h"
 #include "hash.h"
 #include "jhash.h"
+#include "filter.h"
 
 #include "bgpd/bgpd.h"
 #include "bgpd/bgp_table.h"
@@ -42,9 +43,7 @@ Software Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 #include "zebra/zserv.h"	/* For ZEBRA_SERV_PATH. */
 
 struct bgp_nexthop_cache *zlookup_query (struct in_addr);
-#ifdef HAVE_IPV6
 struct bgp_nexthop_cache *zlookup_query_ipv6 (struct in6_addr *);
-#endif /* HAVE_IPV6 */
 
 /* Only one BGP scan thread are activated at the same time. */
 static struct thread *bgp_scan_thread = NULL;
@@ -132,7 +131,6 @@ bgp_nexthop_same (struct nexthop *next1, struct nexthop *next2)
       if (next1->ifindex != next2->ifindex)
 	return 0;
       break;
-#ifdef HAVE_IPV6
     case ZEBRA_NEXTHOP_IPV6:
       if (! IPV6_ADDR_SAME (&next1->gate.ipv6, &next2->gate.ipv6))
 	return 0;
@@ -144,7 +142,6 @@ bgp_nexthop_same (struct nexthop *next1, struct nexthop *next2)
       if (next1->ifindex != next2->ifindex)
 	return 0;
       break;
-#endif /* HAVE_IPV6 */
     default:
       /* do nothing */
       break;
@@ -196,7 +193,6 @@ bgp_nexthop_onlink (afi_t afi, struct attr *attr)
 	  return 1;
 	}
     }
-#ifdef HAVE_IPV6
   else if (afi == AFI_IP6)
     {
       if (attr->extra->mp_nexthop_len == 32)
@@ -215,11 +211,9 @@ bgp_nexthop_onlink (afi_t afi, struct attr *attr)
 	    }
 	}
     }
-#endif /* HAVE_IPV6 */
   return 0;
 }
 
-#ifdef HAVE_IPV6
 /* Check specified next-hop is reachable or not. */
 static int
 bgp_nexthop_lookup_ipv6 (struct peer *peer, struct bgp_info *ri, int *changed,
@@ -304,7 +298,6 @@ bgp_nexthop_lookup_ipv6 (struct peer *peer, struct bgp_info *ri, int *changed,
 
   return bnc->valid;
 }
-#endif /* HAVE_IPV6 */
 
 /* Check specified next-hop is reachable or not. */
 int
@@ -324,10 +317,8 @@ bgp_nexthop_lookup (afi_t afi, struct peer *peer, struct bgp_info *ri,
       return 1;
     }
   
-#ifdef HAVE_IPV6
   if (afi == AFI_IP6)
     return bgp_nexthop_lookup_ipv6 (peer, ri, changed, metricchanged);
-#endif /* HAVE_IPV6 */
 
   addr = ri->attr->nexthop;
 
@@ -496,7 +487,8 @@ bgp_scan (afi_t afi, safi_t safi)
 					   afi, SAFI_UNICAST);
 	    }
 	}
-      bgp_process (bgp, rn, afi, SAFI_UNICAST);
+      if (rn->info)
+        bgp_process (bgp, rn, afi, SAFI_UNICAST);
     }
 
   /* Flash old cache. */
@@ -536,9 +528,7 @@ bgp_scan_timer (struct thread *t)
 
   bgp_scan (AFI_IP, SAFI_UNICAST);
 
-#ifdef HAVE_IPV6
   bgp_scan (AFI_IP6, SAFI_UNICAST);
-#endif /* HAVE_IPV6 */
 
   return 0;
 }
@@ -587,6 +577,17 @@ bgp_address_init (void)
 {
   bgp_address_hash = hash_create (bgp_address_hash_key_make,
                                   bgp_address_hash_cmp);
+}
+
+void
+bgp_address_destroy (void)
+{
+  if (bgp_address_hash == NULL)
+    return;
+
+  hash_clean(bgp_address_hash, NULL);
+  hash_free(bgp_address_hash);
+  bgp_address_hash = NULL;
 }
 
 static void
@@ -671,7 +672,6 @@ bgp_connected_add (struct connected *ifc)
 	  rn->info = bc;
 	}
     }
-#ifdef HAVE_IPV6
   else if (addr->family == AF_INET6)
     {
       apply_mask_ipv6 ((struct prefix_ipv6 *) &p);
@@ -695,7 +695,6 @@ bgp_connected_add (struct connected *ifc)
 	  rn->info = bc;
 	}
     }
-#endif /* HAVE_IPV6 */
 }
 
 void
@@ -738,7 +737,6 @@ bgp_connected_delete (struct connected *ifc)
       bgp_unlock_node (rn);
       bgp_unlock_node (rn);
     }
-#ifdef HAVE_IPV6
   else if (addr->family == AF_INET6)
     {
       apply_mask_ipv6 ((struct prefix_ipv6 *) &p);
@@ -763,7 +761,6 @@ bgp_connected_delete (struct connected *ifc)
       bgp_unlock_node (rn);
       bgp_unlock_node (rn);
     }
-#endif /* HAVE_IPV6 */
 }
 
 int
@@ -886,7 +883,6 @@ zlookup_query (struct in_addr addr)
   return zlookup_read ();
 }
 
-#ifdef HAVE_IPV6
 static struct bgp_nexthop_cache *
 zlookup_read_ipv6 (void)
 {
@@ -989,7 +985,6 @@ zlookup_query_ipv6 (struct in6_addr *addr)
 
   return zlookup_read_ipv6 ();
 }
-#endif /* HAVE_IPV6 */
 
 static int
 bgp_import_check (struct prefix *p, u_int32_t *igpmetric,
@@ -1308,7 +1303,6 @@ show_ip_bgp_scan_tables (struct vty *vty, const char detail)
 		   inet_ntop (AF_INET, &rn->p.u.prefix4, buf, INET6_ADDRSTRLEN), VTY_NEWLINE);
       }
 
-#ifdef HAVE_IPV6
   {
     for (rn = bgp_table_top (bgp_nexthop_cache_table[AFI_IP6]); 
          rn; 
@@ -1340,7 +1334,6 @@ show_ip_bgp_scan_tables (struct vty *vty, const char detail)
 		     VTY_NEWLINE);
 	}
   }
-#endif /* HAVE_IPV6 */
 
   vty_out (vty, "BGP connected route:%s", VTY_NEWLINE);
   for (rn = bgp_table_top (bgp_connected_table[AFI_IP]); 
@@ -1350,7 +1343,6 @@ show_ip_bgp_scan_tables (struct vty *vty, const char detail)
       vty_out (vty, " %s/%d%s", inet_ntoa (rn->p.u.prefix4), rn->p.prefixlen,
 	       VTY_NEWLINE);
 
-#ifdef HAVE_IPV6
   {
     for (rn = bgp_table_top (bgp_connected_table[AFI_IP6]); 
          rn; 
@@ -1361,7 +1353,6 @@ show_ip_bgp_scan_tables (struct vty *vty, const char detail)
 		 rn->p.prefixlen,
 		 VTY_NEWLINE);
   }
-#endif /* HAVE_IPV6 */
 
   return CMD_SUCCESS;
 }
@@ -1413,12 +1404,10 @@ bgp_scan_init (void)
 
   bgp_connected_table[AFI_IP] = bgp_table_init (AFI_IP, SAFI_UNICAST);
 
-#ifdef HAVE_IPV6
   cache1_table[AFI_IP6] = bgp_table_init (AFI_IP6, SAFI_UNICAST);
   cache2_table[AFI_IP6] = bgp_table_init (AFI_IP6, SAFI_UNICAST);
   bgp_nexthop_cache_table[AFI_IP6] = cache1_table[AFI_IP6];
   bgp_connected_table[AFI_IP6] = bgp_table_init (AFI_IP6, SAFI_UNICAST);
-#endif /* HAVE_IPV6 */
 
   /* Make BGP scan thread. */
   bgp_scan_thread = thread_add_timer (bm->master, bgp_scan_timer, 
@@ -1451,7 +1440,6 @@ bgp_scan_finish (void)
     bgp_table_unlock (bgp_connected_table[AFI_IP]);
   bgp_connected_table[AFI_IP] = NULL;
 
-#ifdef HAVE_IPV6
   if (cache1_table[AFI_IP6])
     bgp_table_unlock (cache1_table[AFI_IP6]);
   cache1_table[AFI_IP6] = NULL;
@@ -1463,5 +1451,17 @@ bgp_scan_finish (void)
   if (bgp_connected_table[AFI_IP6])
     bgp_table_unlock (bgp_connected_table[AFI_IP6]);
   bgp_connected_table[AFI_IP6] = NULL;
-#endif /* HAVE_IPV6 */
+}
+
+void
+bgp_scan_destroy (void)
+{
+  if (zlookup == NULL)
+    return;
+  THREAD_OFF(bgp_import_thread);
+  THREAD_OFF(bgp_scan_thread);
+  THREAD_OFF(zlookup->t_connect);
+  bgp_scan_finish();
+  zclient_free (zlookup);
+  zlookup = NULL;
 }

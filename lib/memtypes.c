@@ -156,6 +156,7 @@ struct memory_list memory_list_bgp[] =
   { MTYPE_BGP_ADDR,		"BGP own address"		},
   { MTYPE_BGP_RPKI_CACHE,       "RPKI cache"                    },
   { MTYPE_BGP_RPKI_CACHE_GROUP, "RPKI cache group"              },
+  { MTYPE_ENCAP_TLV,		"ENCAP TLV",			},
   { -1, NULL }
 };
 

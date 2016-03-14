@@ -154,13 +154,10 @@ zserv_encode_interface (struct stream *s, struct interface *ifp)
   stream_putl (s, ifp->mtu);
   stream_putl (s, ifp->mtu6);
   stream_putl (s, ifp->bandwidth);
-#ifdef HAVE_STRUCT_SOCKADDR_DL
-  stream_put (s, &ifp->sdl, sizeof (ifp->sdl_storage));
-#else
+  stream_putl (s, ifp->ll_type);
   stream_putl (s, ifp->hw_addr_len);
   if (ifp->hw_addr_len)
     stream_put (s, ifp->hw_addr, ifp->hw_addr_len);
-#endif /* HAVE_STRUCT_SOCKADDR_DL */
 
   /* Write packet size. */
   stream_putw_at (s, 0, stream_get_endp (s));
@@ -397,8 +394,7 @@ zsend_route_multipath (int cmd, struct zserv *client, struct prefix *p,
   
   for (nexthop = rib->nexthop; nexthop; nexthop = nexthop->next)
     {
-      if (CHECK_FLAG(nexthop->flags, NEXTHOP_FLAG_FIB)
-          || nexthop_has_fib_child(nexthop))
+      if (CHECK_FLAG(nexthop->flags, NEXTHOP_FLAG_ACTIVE))
         {
           SET_FLAG (zapi_flags, ZAPI_MESSAGE_NEXTHOP);
           SET_FLAG (zapi_flags, ZAPI_MESSAGE_IFINDEX);
@@ -504,7 +500,7 @@ zsend_ipv6_nexthop_lookup (struct zserv *client, struct in6_addr *addr,
        * are looking up. Therefore, we will just iterate over the top
        * chain of nexthops. */
       for (nexthop = rib->nexthop; nexthop; nexthop = nexthop->next)
-	if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB))
+	if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_ACTIVE))
 	  {
 	    stream_putc (s, nexthop->type);
 	    switch (nexthop->type)
@@ -574,7 +570,7 @@ zsend_ipv4_nexthop_lookup (struct zserv *client, struct in_addr addr,
        * are looking up. Therefore, we will just iterate over the top
        * chain of nexthops. */
       for (nexthop = rib->nexthop; nexthop; nexthop = nexthop->next)
-	if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB))
+	if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_ACTIVE))
 	  {
 	    stream_putc (s, nexthop->type);
 	    switch (nexthop->type)
@@ -644,7 +640,7 @@ zsend_ipv4_nexthop_lookup_mrib (struct zserv *client, struct in_addr addr,
        * are looking up. Therefore, we will just iterate over the top
        * chain of nexthops. */
       for (nexthop = rib->nexthop; nexthop; nexthop = nexthop->next)
-	if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_FIB))
+	if (CHECK_FLAG (nexthop->flags, NEXTHOP_FLAG_ACTIVE))
 	  {
 	    stream_putc (s, nexthop->type);
 	    switch (nexthop->type)
@@ -709,8 +705,7 @@ zsend_ipv4_import_lookup (struct zserv *client, struct prefix_ipv4 *p,
       nump = stream_get_endp(s);
       stream_putc (s, 0);
       for (nexthop = rib->nexthop; nexthop; nexthop = nexthop->next)
-	if (CHECK_FLAG(nexthop->flags, NEXTHOP_FLAG_FIB)
-            || nexthop_has_fib_child(nexthop))
+	if (CHECK_FLAG(nexthop->flags, NEXTHOP_FLAG_ACTIVE))
 	  {
 	    stream_putc (s, nexthop->type);
 	    switch (nexthop->type)
@@ -832,7 +827,7 @@ zread_ipv4_add (struct zserv *client, u_short length, vrf_id_t vrf_id)
   u_char nexthop_num;
   u_char nexthop_type;
   struct stream *s;
-  unsigned int ifindex;
+  ifindex_t ifindex;
   u_char ifname_len;
   safi_t safi;	
 

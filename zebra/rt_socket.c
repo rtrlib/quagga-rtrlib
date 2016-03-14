@@ -68,7 +68,7 @@ sin_masklen (struct in_addr mask)
 
 /* Interface between zebra message and rtm message. */
 static int
-kernel_rtm_ipv4 (int cmd, struct prefix *p, struct rib *rib, int family)
+kernel_rtm_ipv4 (int cmd, struct prefix *p, struct rib *rib)
 
 {
   struct sockaddr_in *mask = NULL;
@@ -76,7 +76,7 @@ kernel_rtm_ipv4 (int cmd, struct prefix *p, struct rib *rib, int family)
   struct nexthop *nexthop, *tnexthop;
   int recursing;
   int nexthop_num = 0;
-  unsigned int ifindex = 0;
+  ifindex_t ifindex = 0;
   int gate = 0;
   int error;
   char prefix_buf[PREFIX_STRLEN];
@@ -216,34 +216,6 @@ kernel_rtm_ipv4 (int cmd, struct prefix *p, struct rib *rib, int family)
   return 0; /*XXX*/
 }
 
-int
-kernel_add_ipv4 (struct prefix *p, struct rib *rib)
-{
-  int route;
-
-  if (zserv_privs.change(ZPRIVS_RAISE))
-    zlog (NULL, LOG_ERR, "Can't raise privileges");
-  route = kernel_rtm_ipv4 (RTM_ADD, p, rib, AF_INET);
-  if (zserv_privs.change(ZPRIVS_LOWER))
-    zlog (NULL, LOG_ERR, "Can't lower privileges");
-
-  return route;
-}
-
-int
-kernel_delete_ipv4 (struct prefix *p, struct rib *rib)
-{
-  int route;
-
-  if (zserv_privs.change(ZPRIVS_RAISE))
-    zlog (NULL, LOG_ERR, "Can't raise privileges");
-  route = kernel_rtm_ipv4 (RTM_DELETE, p, rib, AF_INET);
-  if (zserv_privs.change(ZPRIVS_LOWER))
-    zlog (NULL, LOG_ERR, "Can't lower privileges");
-
-  return route;
-}
-
 #ifdef HAVE_IPV6
 
 #ifdef SIN6_LEN
@@ -273,15 +245,14 @@ sin6_masklen (struct in6_addr mask)
 
 /* Interface between zebra message and rtm message. */
 static int
-kernel_rtm_ipv6_multipath (int cmd, struct prefix *p, struct rib *rib,
-			   int family)
+kernel_rtm_ipv6 (int cmd, struct prefix *p, struct rib *rib)
 {
   struct sockaddr_in6 *mask;
   struct sockaddr_in6 sin_dest, sin_mask, sin_gate;
   struct nexthop *nexthop, *tnexthop;
   int recursing;
   int nexthop_num = 0;
-  unsigned int ifindex = 0;
+  ifindex_t ifindex = 0;
   int gate = 0;
   int error;
 
@@ -369,7 +340,7 @@ kernel_rtm_ipv6_multipath (int cmd, struct prefix *p, struct rib *rib,
 #if 0
       if (error)
 	{
-	  zlog_info ("kernel_rtm_ipv6_multipath(): nexthop %d add error=%d.",
+	  zlog_info ("kernel_rtm_ipv6(): nexthop %d add error=%d.",
 	    nexthop_num, error);
 	}
 #else
@@ -383,38 +354,44 @@ kernel_rtm_ipv6_multipath (int cmd, struct prefix *p, struct rib *rib,
   if (nexthop_num == 0)
     {
       if (IS_ZEBRA_DEBUG_KERNEL)
-	zlog_debug ("kernel_rtm_ipv6_multipath(): No useful nexthop.");
+	zlog_debug ("kernel_rtm_ipv6(): No useful nexthop.");
       return 0;
     }
 
   return 0; /*XXX*/
 }
 
-int
-kernel_add_ipv6 (struct prefix *p, struct rib *rib)
+#endif
+
+static int
+kernel_rtm (int cmd, struct prefix *p, struct rib *rib)
 {
-  int route;
+  switch (PREFIX_FAMILY(p))
+    {
+    case AF_INET:
+      return kernel_rtm_ipv4 (cmd, p, rib);
+    case AF_INET6:
+      return kernel_rtm_ipv6 (cmd, p, rib);
+    }
+  return 0;
+}
+
+int
+kernel_route_rib (struct prefix *p, struct rib *old, struct rib *new)
+{
+  int route = 0;
 
   if (zserv_privs.change(ZPRIVS_RAISE))
     zlog (NULL, LOG_ERR, "Can't raise privileges");
-  route =  kernel_rtm_ipv6_multipath (RTM_ADD, p, rib, AF_INET6);
+
+  if (old)
+    route |= kernel_rtm (RTM_DELETE, p, old);
+
+  if (new)
+    route |= kernel_rtm (RTM_ADD, p, new);
+
   if (zserv_privs.change(ZPRIVS_LOWER))
     zlog (NULL, LOG_ERR, "Can't lower privileges");
 
   return route;
 }
-
-int
-kernel_delete_ipv6 (struct prefix *p, struct rib *rib)
-{
-  int route;
-
-  if (zserv_privs.change(ZPRIVS_RAISE))
-    zlog (NULL, LOG_ERR, "Can't raise privileges");
-  route =  kernel_rtm_ipv6_multipath (RTM_DELETE, p, rib, AF_INET6);
-  if (zserv_privs.change(ZPRIVS_LOWER))
-    zlog (NULL, LOG_ERR, "Can't lower privileges");
-
-  return route;
-}
-#endif /* HAVE_IPV6 */
