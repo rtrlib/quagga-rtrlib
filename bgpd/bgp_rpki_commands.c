@@ -29,6 +29,7 @@
 #include "routemap.h"
 #include "vector.h"
 #include "vty.h"
+#include "filter.h"
 
 #include "rtrlib/rtrlib.h"
 #include "rtrlib/lib/ip.h"

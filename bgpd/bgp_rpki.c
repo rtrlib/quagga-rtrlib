@@ -30,9 +30,10 @@
 #include "linklist.h"
 #include "memory.h"
 #include "thread.h"
+#include "filter.h"
+#include "bgpd/bgpd.h"
 #include "bgpd/bgp_table.h"
 #include "bgp_advertise.h"
-#include "bgpd/bgpd.h"
 #include "bgpd/bgp_debug.h"
 #include "bgpd/bgp_attr.h"
 #include "bgpd/bgp_aspath.h"
@@ -122,7 +123,7 @@ rpki_init_sync_socket()
   rpki_sync_socket_rtr = fds[0];
   rpki_sync_socket_bgpd = fds[1];
   fcntl(rpki_sync_socket_rtr, F_SETFL, O_NONBLOCK);
-  thread_add_read(master, rpki_update_cb_sync_bgpd, 0, rpki_sync_socket_bgpd);
+  thread_add_read(bm->master, rpki_update_cb_sync_bgpd, 0, rpki_sync_socket_bgpd);
 }
 
 void
@@ -408,7 +409,7 @@ static int
 rpki_update_cb_sync_bgpd(struct thread *thread)
 {
   struct pfx_record *rec;
-  thread_add_read(master, rpki_update_cb_sync_bgpd, 0, rpki_sync_socket_bgpd);
+  thread_add_read(bm->master, rpki_update_cb_sync_bgpd, 0, rpki_sync_socket_bgpd);
   int rtval = read(rpki_sync_socket_bgpd, &rec, sizeof(struct pfx_record *));
   if(rtval < 1)
     {
