@@ -1628,7 +1628,7 @@ bgp_process_main (struct work_queue *wq, void *data)
     {
       struct bgp_info * bgp_info = rn->info;
       // If we have validation data and prefix has not yet been validated
-      if (rpki_is_synchronized() && bgp_info->rpki_validation_status == 0)
+      if (rpki_is_synchronized())
         {
           RPKI_SET_ORIGIN_VALIDATION_STATUS(bgp, bgp_info, p)
         }
