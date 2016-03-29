@@ -1532,7 +1532,7 @@ dnl ------------------------------------
 dnl Enable RPKI and add librtr to libs
 dnl ------------------------------------
 if test "${enable_rpki}" = "yes"; then
-  PKG_CHECK_MODULES(RTRLIB,[rtrlib >= 0.3.0],
+  PKG_CHECK_MODULES(RTRLIB,[rtrlib >= 0.3.6],
       [AC_DEFINE(HAVE_RPKI,1,Enable RPKI prefix validation for BGP)
       RPKI=true
       LIBS="$LIBS $RTRLIB_LIBS"
