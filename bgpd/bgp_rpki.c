@@ -153,7 +153,12 @@ rpki_start()
       return;
     }
   RPKI_DEBUG("Init rtr_mgr.");
-  rtr_config = rtr_mgr_init(groups, group_len, polling_period, expire_interval, &rpki_update_cb_sync_rtr, NULL, NULL, NULL);
+  int rval = rtr_mgr_init(&rtr_config, groups, group_len, polling_period, expire_interval, 600, &rpki_update_cb_sync_rtr, NULL, NULL, NULL);
+  if(rval == RTR_INVALID_PARAM)
+    {
+      RPKI_DEBUG("Bad interval value for rtrlib. Prefix validation is off.");
+      return;
+    }
 
   RPKI_DEBUG("Starting rtr_mgr.");
   rtr_mgr_start(rtr_config);
