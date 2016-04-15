@@ -64,11 +64,10 @@ server in the background.
 validated prefix table. The routes will be annotated with one of three
 validation states: valid, notfound, or invalid.
 
-@item By default the router will prefer valid routes over not found routes,
-and it will neither accept nor distribute invalid routes. Statically
-configured routes which are invalid will also not be announced to
-neighbors. The router can be configured allow invalid routes during the best
-path selection process.
+@item By default, enabling RPKI does not change best path selection. In
+particular, invalid prefixes will still be considered during best path
+selection.  However, the router can be configured to ignore all invalid
+prefixes.
 
 @item Route maps can be configured to match a specific RPKI validation
 state. This allows the creation of local policies, which handle BGP routes
@@ -146,7 +145,7 @@ terminates the existing connection.
 
 @deffn {RPKI Group Command} {rpki cache (@var{A.B.C.D}|@var{WORD}) @var{PORT} [@var{SSH_USERNAME}] [@var{SSH_PRIVKEY_PATH}] [@var{SSH_PUBKEY_PATH}] [@var{KNOWN_HOSTS_PATH}]} {}
 @deffnx {RPKI Group Command} {no rpki cache (@var{A.B.C.D}|@var{WORD}) [@var{PORT}]} {}
-Add a cache server to the cache group. By default the connection between
+Add a cache server to the cache group. By default, the connection between
 router and cache server is based on plain TCP. Protecting the connection
 between router and cache server by SSH is optional.
 @end deffn
@@ -203,14 +202,13 @@ Create a clause for a route map to match prefixes with the specified RPKI state.
 
 @strong{Note} that the matching of invalid prefixes requires that invalid
 prefixes are considered for best path selection, i.e., @command{bgp
-bestpath prefix-validate allow-invalid} is enabled.
+bestpath prefix-validate disallow-invalid} is not enabled.
 
 In the following example, the router prefers valid routes over invalid
 prefixes because invalid routes have a lower local preference.
 @example
   ! Allow for invalid routes in route selection process
   route bgp 60001
-   bgp bestpath prefix-validate allow-invalid
   !
   ! Set local preference of invalid prefixes to 10
   route-map rpki permit 10
@@ -270,7 +268,6 @@ enable-rpki
 !
 router bgp 60001
  bgp router-id 141.22.28.223
- bgp bestpath prefix-validate allow-invalid
  network 192.168.0.0/16
  neighbor 123.123.123.0 remote-as 60002
  neighbor 123.123.123.0 route-map rpki in
