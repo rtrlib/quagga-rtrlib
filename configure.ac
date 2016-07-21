@@ -1537,7 +1537,8 @@ if test "${enable_rpki}" = "yes"; then
       RPKI=true
       LIBS="$LIBS $RTRLIB_LIBS"
       CFLAGS="$CFLAGS $RTRLIB_CFLAGS"],
-    [RPKI=false AC_MSG_ERROR([librtr was not found on your system, which is needed by rpki prefix
+    [RPKI=false 
+    AC_MSG_ERROR([librtr was not found on your system, which is needed by rpki prefix
     validation.])])
 fi
 AM_CONDITIONAL([HAVE_RPKI], test "x$RPKI" = "xtrue")
