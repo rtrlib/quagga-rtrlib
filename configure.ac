@@ -1543,6 +1543,17 @@ if test "${enable_rpki}" = "yes"; then
 fi
 AM_CONDITIONAL([HAVE_RPKI], test "x$RPKI" = "xtrue")
 
+dnl ------------------------------------------
+dnl Check whether rtrlib was build with ssh support
+dnl ------------------------------------------
+AC_MSG_CHECKING([whether the RTR Library is compiled with SSH])
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include "rtrlib/rtrlib.h"]],
+  			[[struct tr_ssh_config config;]])],
+	[AC_MSG_RESULT(yes)
+	AC_DEFINE(FOUND_SSH,,found_ssh)],
+	AC_MSG_RESULT(no)
+)
+
 dnl ---------------------------
 dnl Check htonl works correctly
 dnl ---------------------------
