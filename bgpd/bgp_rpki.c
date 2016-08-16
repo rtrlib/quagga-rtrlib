@@ -43,7 +43,9 @@
 #include "rtrlib/rtr_mgr.h"
 #include "rtrlib/lib/ip.h"
 #include "rtrlib/transport/tcp/tcp_transport.h"
+#if defined(FOUND_SSH)
 #include "rtrlib/transport/ssh/ssh_transport.h"
+#endif
 
 /**********************************/
 /** Declaration of variables     **/
